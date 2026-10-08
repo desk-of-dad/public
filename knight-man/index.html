@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>The Knight Man (v3)</title>
+<style>
+  body { margin: 0; background: #111; color: #eee; font-family: "Courier New", monospace;
+         display: flex; flex-direction: column; align-items: center; }
+  h1 { font-size: 22px; letter-spacing: 4px; margin: 16px 0 8px; }
+  #hud { display: flex; justify-content: space-between; align-items: center;
+         width: 608px; font-size: 16px; margin-bottom: 8px; }
+  #shieldBox { display: inline-block; width: 70px; height: 12px; border: 2px solid #eee; vertical-align: -1px; }
+  #shieldBar { height: 100%; width: 100%; background: #22d3ee; }
+  canvas { border: 4px solid #888; background: #222; display: block; }
+  #help { margin-top: 10px; font-size: 14px; color: #aaa; text-align: center; line-height: 1.6; }
+
+  /* ---------- PHONE AND TABLET BUTTONS ----------
+     They only show up on a touch screen. On a computer the game looks the same as before. */
+  #dpad, #actions, .touchHelp { display: none; }
+  @media (pointer: coarse) {
+    body { touch-action: manipulation; -webkit-user-select: none; user-select: none;
+           -webkit-touch-callout: none; overflow-x: hidden; }
+    h1 { font-size: 18px; margin: 8px 0 4px; }
+    #hud { width: calc(100vw - 16px); max-width: 608px; font-size: clamp(10px, 3vw, 16px); }
+    #shieldBox { width: 40px; }
+    #wrap { display: grid; grid-template-areas: "game game" "dpad actions";
+            align-items: center; justify-items: center; gap: 12px; }
+    canvas { grid-area: game; width: calc(100vw - 16px); max-width: 608px; height: auto;
+             box-sizing: border-box; touch-action: none; }
+    #dpad { grid-area: dpad; display: block; position: relative; width: 150px; height: 150px; touch-action: none; }
+    #dpad div { position: absolute; width: 50px; height: 50px; background: #444; border: 2px solid #888;
+                box-sizing: border-box; display: flex; align-items: center; justify-content: center;
+                font-size: 22px; color: #eee; }
+    #dpad div.on { background: #3b82f6; }
+    #dUp { left: 50px; top: 0; } #dDown { left: 50px; top: 100px; }
+    #dLeft { left: 0; top: 50px; } #dRight { left: 100px; top: 50px; }
+    #dMid { left: 50px; top: 50px; background: #333 !important; border-color: #555 !important; }
+    #actions { grid-area: actions; display: flex; gap: 14px; touch-action: none; }
+    #actions div { width: 76px; height: 76px; border-radius: 50%; border: 3px solid #eee;
+                   display: flex; align-items: center; justify-content: center;
+                   font: bold 13px "Courier New", monospace; color: #111; touch-action: none; }
+    #swordBtn { background: #e5e7eb; }
+    #shieldBtn { background: #22d3ee; }
+    #actions div.on { filter: brightness(0.6); }
+    .keyHelp { display: none; }
+    .touchHelp { display: inline; }
+    #help { font-size: 12px; padding: 0 8px; }
+  }
+  /* phone turned sideways: buttons on both sides of the game */
+  @media (pointer: coarse) and (orientation: landscape) {
+    h1, #help { display: none; }
+    #hud { margin: 4px 0; }
+    #wrap { grid-template-areas: "dpad game actions"; }
+    canvas { height: calc(100vh - 40px); height: calc(100dvh - 40px); width: auto; max-width: none; }
+    #actions { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+<h1>THE KNIGHT MAN</h1>
+<div id="hud">
+  <span>SCORE: <span id="score">0</span></span>
+  <span>LEVEL: <span id="level">1</span></span>
+  <span>COINS: <span id="coinsLeft">0</span></span>
+  <span>SHIELD: <span id="shieldBox"><div id="shieldBar"></div></span></span>
+  <span>LIVES: <span id="lives">3</span></span>
+</div>
+<div id="wrap">
+  <canvas id="game" width="608" height="480"></canvas>
+  <div id="dpad">
+    <div id="dUp">&#9650;</div><div id="dLeft">&#9664;</div><div id="dMid"></div>
+    <div id="dRight">&#9654;</div><div id="dDown">&#9660;</div>
+  </div>
+  <div id="actions">
+    <div id="swordBtn">SWORD</div>
+    <div id="shieldBtn">SHIELD</div>
+  </div>
+</div>
+<div id="help">
+  <span class="keyHelp">ARROW KEYS: move &nbsp;|&nbsp; SPACE: swing sword &nbsp;|&nbsp; hold S: shield &nbsp;|&nbsp; ENTER: start<br>
+  The shield only covers the side you face. Hold S and tap an arrow to turn it.</span>
+  <span class="touchHelp">Tap the game to start. Hold SHIELD and tap an arrow to turn your shield.</span>
+</div>
+
+<script>
+// =====================================================
+// NUMBERS YOU CAN CHANGE (this is called "tuning")
+// Change one number, save, reload the page, and play.
+// =====================================================
+const KNIGHT_SPEED = 6;           // squares per second
+const START_LIVES = 3;
+const COIN_POINTS = 10;
+const SWORD_REACH = 1;            // how many squares the sword reaches
+const SWORD_SWING_TIME = 0.3;     // seconds the sword stays out
+const SWORD_REST_TIME = 0.8;      // seconds before you can swing again
+const SWORD_STUN_TIME = 3;        // seconds a monster is stunned by the sword
+const SWORD_PUSH = 1;             // squares the sword pushes a monster back
+const SHIELD_SECONDS = 2;         // how long a full shield lasts
+const SHIELD_REFILL_SECONDS = 5;  // how long an empty shield takes to fill up
+
+// Dragon (walks on the ground, only sees the way its eyes point, sees far)
+const DRAGON_WANDER_SPEED = 2.5;  // dragon speed when it can't see you
+const DRAGON_CHASE_SPEED = 5;     // dragon speed when it is chasing you
+const FIRE_LENGTH_START = 2;      // squares of fire on level 1
+const FIRE_LONGER_EVERY = 3;      // fire grows 1 square every this many levels
+const FIRE_REST_START = 2;        // seconds between fire blasts on level 1
+const FIRE_REST_LAST_LEVEL = 1.2; // seconds between fire blasts on the last level
+const FIRE_WINDUP = 0.4;          // seconds the dragon flashes yellow before it breathes
+const FIRE_TIME = 0.5;            // seconds the fire stays out
+
+// Ogre (walks on the ground, sees all the way around, but not far)
+const OGRE_WANDER_SPEED = 2;      // ogre speed when it can't see you
+const OGRE_CHASE_SPEED = 4;       // ogre speed when it is chasing you
+const OGRE_SIGHT = 4;             // how many squares away the ogre can see
+const CLUB_REACH = 1;             // how many squares the club reaches
+const CLUB_WINDUP = 0.5;          // seconds the ogre lifts its club before it swings
+const CLUB_TIME = 0.3;            // seconds the club stays down
+const CLUB_REST = 1.5;            // seconds before the ogre can swing again
+const OGRE_LEAN_CHANCE = 0.15;    // chance the ogre stops to lean on a wall (0 to 1)
+const OGRE_LEAN_TIME = 1.2;       // seconds the ogre leans on the wall
+
+// Flying dragon (flies over walls on a set path)
+const FLYER_SPEED = 3;            // squares per second
+// The flying dragon flies from point to point, then back to the first point.
+// This path makes a big X (a bow tie) across the whole map.
+const FLYER_PATH = [
+  { x: 3, y: 3 }, { x: 15, y: 11 }, { x: 15, y: 3 }, { x: 3, y: 11 }
+];
+
+// Levels: who is in each level. The game ends after the last one.
+const LEVELS = [
+  { dragons: 1, ogres: 0, flyers: 0, news: "" },
+  { dragons: 1, ogres: 1, flyers: 0, news: "An ogre joins! Watch out for its club" },
+  { dragons: 1, ogres: 1, flyers: 1, news: "A flying dragon joins!" },
+  { dragons: 2, ogres: 1, flyers: 1, news: "A second dragon joins!" },
+  { dragons: 2, ogres: 2, flyers: 1, news: "A second ogre joins! The last level" }
+];
+const MAX_LEVEL = LEVELS.length;
+const LEVEL_BANNER_TIME = 2;      // seconds the "LEVEL 2" sign shows
+
+// =====================================================
+// THE MAZE (Maze B: castle on the left, grounds on the right)
+// # is a wall or a tree. A dot is an open square with a gold coin.
+// =====================================================
+const MAZE = [
+  "###################",
+  "#.......#.........#",
+  "#.#..##.#..##..#..#",
+  "#.#...#......#...##",
+  "#.#.#.#.#.#...##..#",
+  "#...#.......#.....#",
+  "#.#.#.#.#.#...#.#.#",
+  "#.#...#.#..##.....#",
+  "#.##.##.#...#.#.#.#",
+  "#.................#",
+  "#.##.##.#.#..#.#..#",
+  "#.#...#......#..#.#",
+  "#.##..#.#.##......#",
+  "#.......#.....#...#",
+  "###################"
+];
+const COLS = 19, ROWS = 15, TILE = 32;
+const KNIGHT_START = { x: 1, y: 13 };
+const DRAGON_STARTS = [{ x: 17, y: 1 }, { x: 17, y: 13 }];  // first dragon, second dragon
+const OGRE_STARTS = [{ x: 5, y: 1 }, { x: 11, y: 5 }];      // first ogre, second ogre
+
+const DIRS = {
+  ArrowUp:    { dx: 0, dy: -1 },
+  ArrowDown:  { dx: 0, dy: 1 },
+  ArrowLeft:  { dx: -1, dy: 0 },
+  ArrowRight: { dx: 1, dy: 0 }
+};
+const DIR_LIST = Object.values(DIRS);
+
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+let state = "title";   // title, play, hit, level, won, over
+let stateTimer = 0;
+let hitBy = "";
+let score, lives, level, coins, knight, monsters = [];
+let shield, shieldBroken, shieldKey = false;
+let swingTimer, swordRest;
+let held = [];         // arrow keys being held down, newest last
+
+function isOpen(x, y) {
+  return y >= 0 && y < ROWS && x >= 0 && x < COLS && MAZE[y][x] !== "#";
+}
+
+// How many walls or trees touch this square (all 8 squares around it)
+function wallsAround(x, y) {
+  let n = 0;
+  for (let dy = -1; dy <= 1; dy++)
+    for (let dx = -1; dx <= 1; dx++)
+      if ((dx || dy) && !isOpen(x + dx, y + dy)) n++;
+  return n;
+}
+
+// ---------- LEVEL RULES ----------
+function fireLength(lv) {
+  return FIRE_LENGTH_START + Math.floor((lv - 1) / FIRE_LONGER_EVERY);
+}
+function fireRest(lv) {
+  return FIRE_REST_START - (FIRE_REST_START - FIRE_REST_LAST_LEVEL) * (lv - 1) / (MAX_LEVEL - 1);
+}
+
+function newGame() {
+  score = 0;
+  lives = START_LIVES;
+  startLevel(1);
+}
+
+function startLevel(n) {
+  level = n;
+  coins = new Set();
+  for (let y = 0; y < ROWS; y++) {
+    for (let x = 0; x < COLS; x++) {
+      if (isOpen(x, y) && !(x === KNIGHT_START.x && y === KNIGHT_START.y)) coins.add(x + "," + y);
+    }
+  }
+  resetPositions();
+  state = "play";
+}
+
+// kind is "dragon", "ogre", or "flyer"
+function makeMonster(kind, start) {
+  return { kind: kind, tx: start.x, ty: start.y, px: start.x, py: start.y,
+           moving: null, last: null, facing: DIRS.ArrowLeft,
+           chasing: false, sees: false, target: null, stun: 0, lean: 0,
+           windup: 0, attackRest: 0, attackTimer: 0, attackSquares: [], attackDir: null,
+           pathStep: 1, vx: 0, vy: 0 };
+}
+
+function resetPositions() {
+  knight = { tx: KNIGHT_START.x, ty: KNIGHT_START.y, px: KNIGHT_START.x, py: KNIGHT_START.y,
+             moving: null, facing: DIRS.ArrowRight };
+  const plan = LEVELS[level - 1];
+  monsters = [];
+  for (let i = 0; i < plan.dragons; i++) monsters.push(makeMonster("dragon", DRAGON_STARTS[i]));
+  for (let i = 0; i < plan.ogres; i++) monsters.push(makeMonster("ogre", OGRE_STARTS[i]));
+  for (let i = 0; i < plan.flyers; i++) monsters.push(makeMonster("flyer", FLYER_PATH[0]));
+  monsters.forEach(function (m) { if (m.kind === "dragon") m.attackRest = FIRE_REST_START; });
+  shield = 1;
+  shieldBroken = false;
+  swingTimer = 0;
+  swordRest = 0;
+}
+
+// ---------- KEYS AND BUTTONS ----------
+// The keyboard and the phone buttons both use these.
+function pressArrow(key) {
+  if (!held.includes(key)) held.push(key);
+  if (state === "play") knight.facing = DIRS[key];
+}
+function releaseArrow(key) {
+  held = held.filter(function (k) { return k !== key; });
+}
+function swingSword() {
+  if (state === "play" && swordRest <= 0 && !isShielding()) {
+    swingTimer = SWORD_SWING_TIME;
+    swordRest = SWORD_REST_TIME;
+  }
+}
+function pressStart() {
+  if (state === "title" || state === "won" || state === "over") newGame();
+}
+
+window.addEventListener("keydown", function (e) {
+  if (DIRS[e.key]) {
+    e.preventDefault();
+    pressArrow(e.key);
+  } else if (e.key === " ") {
+    e.preventDefault();
+    swingSword();
+  } else if (e.key === "s" || e.key === "S") {
+    shieldKey = true;
+  } else if (e.key === "Enter") {
+    pressStart();
+  }
+});
+window.addEventListener("keyup", function (e) {
+  releaseArrow(e.key);
+  if (e.key === "s" || e.key === "S") shieldKey = false;
+});
+window.addEventListener("blur", function () { held = []; shieldKey = false; });
+
+// ---------- PHONE BUTTONS ----------
+const TOUCH = window.matchMedia("(pointer: coarse)").matches;
+const dpad = document.getElementById("dpad");
+const swordBtn = document.getElementById("swordBtn");
+const shieldBtn = document.getElementById("shieldBtn");
+const PAD_KEYS = { ArrowUp: "dUp", ArrowDown: "dDown", ArrowLeft: "dLeft", ArrowRight: "dRight" };
+let padKey = null;   // the arrow your thumb is on right now
+
+// The arrow pad works out which way your thumb is from its middle,
+// so you can slide your thumb from one arrow to another without lifting it.
+function padTouch(e) {
+  e.preventDefault();
+  const box = dpad.getBoundingClientRect();
+  const x = e.clientX - (box.left + box.width / 2), y = e.clientY - (box.top + box.height / 2);
+  let key = null;
+  if (Math.hypot(x, y) > box.width * 0.12) {
+    if (Math.abs(x) > Math.abs(y)) key = x > 0 ? "ArrowRight" : "ArrowLeft";
+    else key = y > 0 ? "ArrowDown" : "ArrowUp";
+  }
+  setPadKey(key);
+}
+function setPadKey(key) {
+  if (key === padKey) return;
+  if (padKey) { releaseArrow(padKey); document.getElementById(PAD_KEYS[padKey]).classList.remove("on"); }
+  padKey = key;
+  if (key) { pressArrow(key); document.getElementById(PAD_KEYS[key]).classList.add("on"); }
+}
+dpad.addEventListener("pointerdown", function (e) { dpad.setPointerCapture(e.pointerId); padTouch(e); });
+dpad.addEventListener("pointermove", function (e) { if (e.buttons || e.pointerType === "touch") padTouch(e); });
+["pointerup", "pointercancel", "lostpointercapture"].forEach(function (name) {
+  dpad.addEventListener(name, function () { setPadKey(null); });
+});
+
+swordBtn.addEventListener("pointerdown", function (e) {
+  e.preventDefault();
+  swordBtn.classList.add("on");
+  swingSword();
+});
+shieldBtn.addEventListener("pointerdown", function (e) {
+  e.preventDefault();
+  shieldBtn.setPointerCapture(e.pointerId);
+  shieldBtn.classList.add("on");
+  shieldKey = true;
+});
+["pointerup", "pointercancel", "lostpointercapture"].forEach(function (name) {
+  swordBtn.addEventListener(name, function () { swordBtn.classList.remove("on"); });
+  shieldBtn.addEventListener(name, function () { shieldBtn.classList.remove("on"); shieldKey = false; });
+});
+canvas.addEventListener("pointerdown", function (e) { e.preventDefault(); pressStart(); });
+// stop the long-press menu from popping up on the buttons
+document.addEventListener("contextmenu", function (e) { if (TOUCH) e.preventDefault(); });
+
+function isShielding() {
+  return shieldKey && !shieldBroken && shield > 0;
+}
+
+// ---------- THE ONE-SIDED SHIELD ----------
+// The shield only covers the side the knight is facing.
+// Something coming the opposite way of the knight's face runs into it.
+function shieldStopsDir(dx, dy) {
+  return isShielding() && dx * knight.facing.dx + dy * knight.facing.dy < 0;
+}
+// Is a monster standing on the knight's front side?
+function inFrontOfKnight(m) {
+  return (m.px - knight.px) * knight.facing.dx + (m.py - knight.py) * knight.facing.dy > 0;
+}
+
+// ---------- MOVING ----------
+// Everything on the ground moves one square at a time. chooseNext picks the next square.
+function moveThing(thing, speed, dt, chooseNext, onArrive) {
+  let dist = speed * dt;
+  while (dist > 0) {
+    if (!thing.moving) {
+      const d = chooseNext();
+      if (!d) break;
+      thing.moving = d;
+      thing.last = d;
+      thing.facing = d;
+    }
+    const goalX = thing.tx + thing.moving.dx, goalY = thing.ty + thing.moving.dy;
+    const left = Math.abs(goalX - thing.px) + Math.abs(goalY - thing.py);
+    if (dist >= left) {
+      thing.px = thing.tx = goalX;
+      thing.py = thing.ty = goalY;
+      thing.moving = null;
+      dist -= left;
+      if (onArrive) onArrive();
+      if (state !== "play") break;
+    } else {
+      thing.px += thing.moving.dx * dist;
+      thing.py += thing.moving.dy * dist;
+      dist = 0;
+    }
+  }
+}
+
+// The knight goes the way of the newest arrow key. He stops when you let go.
+function knightNext() {
+  if (isShielding()) return null;
+  for (let i = held.length - 1; i >= 0; i--) {
+    const d = DIRS[held[i]];
+    if (isOpen(knight.tx + d.dx, knight.ty + d.dy)) {
+      knight.facing = d;
+      return d;
+    }
+  }
+  return null;
+}
+
+function knightArrives() {
+  const key = knight.tx + "," + knight.ty;
+  if (coins.has(key)) {
+    coins.delete(key);
+    score += COIN_POINTS;
+    if (coins.size === 0) {
+      if (level >= MAX_LEVEL) {
+        state = "won";
+      } else {
+        state = "level";
+        stateTimer = LEVEL_BANNER_TIME;
+      }
+    }
+  }
+}
+
+// The square(s) the knight is standing on.
+function onKnight(x, y) {
+  if (x === knight.tx && y === knight.ty) return true;
+  if (knight.moving && x === knight.tx + knight.moving.dx && y === knight.ty + knight.moving.dy) return true;
+  return false;
+}
+// A monster can't step onto the knight through the front of his shield.
+function shieldBlocksStep(m, step) {
+  return onKnight(m.tx + step.dx, m.ty + step.dy) && shieldStopsDir(step.dx, step.dy);
+}
+
+// Is there a clear straight line (no wall or tree) between two squares?
+function clearLine(ax, ay, bx, by) {
+  const n = Math.ceil(Math.max(Math.abs(bx - ax), Math.abs(by - ay)) * 4);
+  for (let i = 1; i < n; i++) {
+    if (!isOpen(Math.round(ax + (bx - ax) * i / n), Math.round(ay + (by - ay) * i / n))) return false;
+  }
+  return true;
+}
+
+// Can this monster see the knight's square?
+// Dragon: only the way its two eyes point, in a straight line, as far as it goes.
+// Ogre: all the way around, but only OGRE_SIGHT squares away.
+function canSee(m, bx, by) {
+  const ax = Math.round(m.px), ay = Math.round(m.py), f = m.facing;
+  if (ax === bx && ay === by) return true;
+  if (m.kind === "ogre") {
+    return Math.hypot(bx - ax, by - ay) <= OGRE_SIGHT && clearLine(ax, ay, bx, by);
+  }
+  if (f.dx !== 0 && (by !== ay || Math.sign(bx - ax) !== f.dx)) return false;
+  if (f.dy !== 0 && (bx !== ax || Math.sign(by - ay) !== f.dy)) return false;
+  for (let x = Math.min(ax, bx); x <= Math.max(ax, bx); x++)
+    for (let y = Math.min(ay, by); y <= Math.max(ay, by); y++)
+      if (!isOpen(x, y)) return false;
+  return true;
+}
+
+// How far the dragon's fire or the ogre's club reaches
+function attackReach(m) {
+  return m.kind === "ogre" ? CLUB_REACH : fireLength(level);
+}
+
+// Is the knight close enough to get burned or clubbed?
+// The dragon has to be facing the knight. The ogre turns to face him.
+function inAttackRange(m) {
+  const kx = Math.round(knight.px), ky = Math.round(knight.py);
+  const dist = Math.abs(kx - m.tx) + Math.abs(ky - m.ty);
+  if (dist < 1 || dist > attackReach(m)) return false;
+  if (m.kind === "ogre") {
+    if (kx !== m.tx && ky !== m.ty) return false;
+    const dir = { dx: Math.sign(kx - m.tx), dy: Math.sign(ky - m.ty) };
+    for (let i = 1; i <= dist; i++) if (!isOpen(m.tx + dir.dx * i, m.ty + dir.dy * i)) return false;
+    m.facing = DIR_LIST.find(function (d) { return d.dx === dir.dx && d.dy === dir.dy; });
+    return true;
+  }
+  return canSee(m, kx, ky);
+}
+
+// Finds the first step of the shortest path from one square to another.
+function stepToward(fromX, fromY, toX, toY) {
+  if (fromX === toX && fromY === toY) return null;
+  const firstStep = {};
+  const queue = [[fromX, fromY]];
+  firstStep[fromX + "," + fromY] = "start";
+  while (queue.length) {
+    const [x, y] = queue.shift();
+    for (const d of DIR_LIST) {
+      const nx = x + d.dx, ny = y + d.dy, key = nx + "," + ny;
+      if (!isOpen(nx, ny) || firstStep[key]) continue;
+      firstStep[key] = firstStep[x + "," + y] === "start" ? d : firstStep[x + "," + y];
+      if (nx === toX && ny === toY) return firstStep[key];
+      queue.push([nx, ny]);
+    }
+  }
+  return null;
+}
+
+// Picks one choice. Choices with a bigger weight get picked more often.
+function pickWeighted(choices, weightOf) {
+  const weights = choices.map(weightOf);
+  let r = Math.random() * weights.reduce(function (a, b) { return a + b; }, 0);
+  for (let i = 0; i < choices.length; i++) {
+    r -= weights[i];
+    if (r < 0) return choices[i];
+  }
+  return choices[choices.length - 1];
+}
+
+// Dragons and ogres wander. If they saw you, they run to the last place they saw you.
+// If you are close, they stop and breathe fire (dragon) or swing the club (ogre).
+function monsterNext(m) {
+  if (m.stun > 0 || m.windup > 0 || m.attackTimer > 0 || m.lean > 0) return null;
+  if (m.chasing && m.attackRest <= 0 && inAttackRange(m)) {
+    m.windup = m.kind === "ogre" ? CLUB_WINDUP : FIRE_WINDUP;
+    return null;
+  }
+  if (m.chasing) {
+    const step = stepToward(m.tx, m.ty, m.target.x, m.target.y);
+    if (step) {
+      if (shieldBlocksStep(m, step)) {
+        m.facing = step;   // wait next to the knight, looking at him
+        return null;
+      }
+      return step;
+    }
+    m.chasing = false;
+  }
+  const options = DIR_LIST.filter(function (s) {
+    return isOpen(m.tx + s.dx, m.ty + s.dy) && !shieldBlocksStep(m, s);
+  });
+  const forward = options.filter(function (s) {
+    return !(m.last && s.dx === -m.last.dx && s.dy === -m.last.dy);
+  });
+  const pick = forward.length ? forward : options;
+  if (!pick.length) return null;
+  if (m.kind === "ogre") {
+    // The ogre likes walls: squares with more walls around them get picked more often.
+    return pickWeighted(pick, function (s) {
+      const w = wallsAround(m.tx + s.dx, m.ty + s.dy);
+      return 1 + w * w;
+    });
+  }
+  return pick[Math.floor(Math.random() * pick.length)];
+}
+
+// When a wandering ogre stops next to a wall, it sometimes leans on it for a bit.
+function ogreArrives(m) {
+  if (m.kind === "ogre" && !m.chasing && wallsAround(m.tx, m.ty) > 0 && Math.random() < OGRE_LEAN_CHANCE) {
+    m.lean = OGRE_LEAN_TIME;
+  }
+}
+
+// If the shield goes up while a monster is stepping onto the knight from the front, send it back.
+function bounceOffShield(m) {
+  if (!m.moving) return;
+  const gx = m.tx + m.moving.dx, gy = m.ty + m.moving.dy;
+  if (!onKnight(gx, gy) || !shieldStopsDir(m.moving.dx, m.moving.dy)) return;
+  const back = { dx: -m.moving.dx, dy: -m.moving.dy };
+  m.tx = gx; m.ty = gy;
+  m.moving = back;
+}
+
+// Dragon fire or the ogre's club comes out the way the monster is facing.
+function startAttack(m) {
+  m.attackDir = m.facing;
+  m.attackSquares = [];
+  for (let i = 1; i <= attackReach(m); i++) {
+    const ax = m.tx + m.attackDir.dx * i, ay = m.ty + m.attackDir.dy * i;
+    if (!isOpen(ax, ay)) break;
+    m.attackSquares.push({ x: ax, y: ay });
+  }
+  if (m.kind === "ogre") {
+    m.attackTimer = CLUB_TIME;
+    m.attackRest = CLUB_REST;
+  } else {
+    m.attackTimer = FIRE_TIME;
+    m.attackRest = fireRest(level);
+  }
+}
+
+// The fire or club hits the knight, unless his shield faces it.
+function attackHitsKnight(m) {
+  const kx = Math.round(knight.px), ky = Math.round(knight.py);
+  if (!m.attackSquares.some(function (s) { return s.x === kx && s.y === ky; })) return false;
+  return !shieldStopsDir(m.attackDir.dx, m.attackDir.dy);
+}
+
+function swordHits(m) {
+  for (let i = 1; i <= SWORD_REACH; i++) {
+    const sx = knight.px + knight.facing.dx * i, sy = knight.py + knight.facing.dy * i;
+    if (!isOpen(Math.round(sx), Math.round(sy))) return false;
+    if (Math.abs(m.px - sx) < 0.75 && Math.abs(m.py - sy) < 0.75) return true;
+  }
+  return false;
+}
+
+// The sword stuns a monster. It knocks ground monsters back, if there is room behind them.
+function swordPush(m) {
+  m.stun = SWORD_STUN_TIME;
+  if (m.kind === "flyer") return;   // it just hovers in the air, stunned
+  let x = Math.round(m.px), y = Math.round(m.py);
+  for (let i = 0; i < SWORD_PUSH; i++) {
+    const nx = x + knight.facing.dx, ny = y + knight.facing.dy;
+    if (!isOpen(nx, ny) || onKnight(nx, ny)) break;
+    x = nx; y = ny;
+  }
+  m.tx = x; m.ty = y; m.px = x; m.py = y;
+  m.moving = null;
+  m.chasing = false;
+  m.windup = 0;
+  m.lean = 0;
+  m.attackTimer = 0;
+  m.attackSquares = [];
+}
+
+// The flying dragon flies straight from one point of its path to the next, over walls.
+function moveFlyer(m, dt) {
+  let dist = FLYER_SPEED * dt;
+  while (dist > 0) {
+    const goal = FLYER_PATH[m.pathStep];
+    const gx = goal.x - m.px, gy = goal.y - m.py;
+    const left = Math.hypot(gx, gy);
+    if (left > 0) { m.vx = gx / left; m.vy = gy / left; }
+    if (dist >= left) {
+      m.px = goal.x; m.py = goal.y;
+      m.pathStep = (m.pathStep + 1) % FLYER_PATH.length;
+      dist -= left;
+    } else {
+      m.px += m.vx * dist;
+      m.py += m.vy * dist;
+      dist = 0;
+    }
+  }
+}
+
+function loseLife(why) {
+  hitBy = why;
+  lives -= 1;
+  if (lives <= 0) {
+    state = "over";
+  } else {
+    state = "hit";
+    stateTimer = 1.2;
+  }
+}
+
+// ---------- ONE STEP OF THE GAME ----------
+function update(dt) {
+  if (state === "hit") {
+    stateTimer -= dt;
+    if (stateTimer <= 0) { resetPositions(); state = "play"; }
+    return;
+  }
+  if (state === "level") {
+    stateTimer -= dt;
+    if (stateTimer <= 0) startLevel(level + 1);
+    return;
+  }
+  if (state !== "play") return;
+
+  // shield power drains while you hold S, and fills back up when you let go
+  if (isShielding()) {
+    shield -= dt / SHIELD_SECONDS;
+    if (shield <= 0) { shield = 0; shieldBroken = true; }
+  } else {
+    shield = Math.min(1, shield + dt / SHIELD_REFILL_SECONDS);
+    if (shield >= 0.25) shieldBroken = false;
+  }
+  swingTimer = Math.max(0, swingTimer - dt);
+  swordRest = Math.max(0, swordRest - dt);
+
+  moveThing(knight, KNIGHT_SPEED, dt, knightNext, knightArrives);
+  if (state !== "play") return;
+
+  const kx = Math.round(knight.px), ky = Math.round(knight.py);
+  for (const m of monsters) {
+    m.stun = Math.max(0, m.stun - dt);
+
+    if (m.kind === "flyer") {
+      if (m.stun <= 0) moveFlyer(m, dt);
+      if (m.stun <= 0) {
+        const touching = Math.hypot(knight.px - m.px, knight.py - m.py) < 0.7;
+        if (swingTimer > 0 && swordHits(m)) {
+          swordPush(m);
+        } else if (touching && !shieldStopsDir(m.vx, m.vy)) {
+          loseLife("The flying dragon got you");
+          return;
+        }
+      }
+      continue;
+    }
+
+    m.lean = Math.max(0, m.lean - dt);
+    m.attackRest = Math.max(0, m.attackRest - dt);
+    if (m.windup > 0) {
+      m.windup -= dt;
+      if (m.windup <= 0) { m.windup = 0; startAttack(m); }
+    } else if (m.attackTimer > 0) {
+      m.attackTimer -= dt;
+      if (m.attackTimer <= 0) { m.attackTimer = 0; m.attackSquares = []; }
+    }
+
+    m.sees = m.stun <= 0 && canSee(m, kx, ky);
+    if (m.sees) { m.chasing = true; m.lean = 0; m.target = { x: kx, y: ky }; }
+    bounceOffShield(m);
+    const speed = m.kind === "ogre"
+      ? (m.chasing ? OGRE_CHASE_SPEED : OGRE_WANDER_SPEED)
+      : (m.chasing ? DRAGON_CHASE_SPEED : DRAGON_WANDER_SPEED);
+    moveThing(m, speed, dt, function () { return monsterNext(m); }, function () { ogreArrives(m); });
+
+    const name = m.kind === "ogre" ? "The ogre" : "The dragon";
+    if (m.stun <= 0) {
+      const touching = Math.abs(knight.px - m.px) + Math.abs(knight.py - m.py) < 0.7;
+      if (swingTimer > 0 && swordHits(m)) {
+        swordPush(m);
+      } else if (touching && !(isShielding() && inFrontOfKnight(m))) {
+        loseLife(name + " got you");
+        return;
+      }
+    }
+    if (m.attackTimer > 0 && attackHitsKnight(m)) {
+      loseLife(m.kind === "ogre" ? "The ogre's club got you!" : "You got burned!");
+      return;
+    }
+  }
+}
+
+// ---------- DRAWING ----------
+function square(px, py, size, color) {
+  const off = (TILE - size) / 2;
+  ctx.fillStyle = color;
+  ctx.fillRect(px * TILE + off, py * TILE + off, size, size);
+}
+
+function banner(big, small) {
+  ctx.fillStyle = "rgba(0,0,0,0.7)";
+  ctx.fillRect(0, 170, canvas.width, 140);
+  ctx.fillStyle = "#fff";
+  ctx.textAlign = "center";
+  ctx.font = "bold 40px Courier New";
+  ctx.fillText(big, canvas.width / 2, 235);
+  ctx.font = "18px Courier New";
+  ctx.fillText(small, canvas.width / 2, 275);
+}
+
+function stunColor(m) {
+  return Math.floor(m.stun * 6) % 2 ? "#7c6f8a" : "#a99bb8";
+}
+
+function chaseMark(m) {
+  if (m.chasing && m.stun <= 0) {
+    ctx.fillStyle = "#fff";
+    ctx.font = "bold 18px Courier New";
+    ctx.textAlign = "center";
+    ctx.fillText("!", m.px * TILE + TILE / 2, m.py * TILE + 2);
+  }
+}
+
+function drawDragon(d) {
+  // dark red = wandering, bright orange = chasing, purple = stunned, yellow flash = about to breathe fire
+  let color = d.chasing ? "#ff5a1f" : "#b91c1c";
+  if (d.windup > 0) color = Math.floor(d.windup * 20) % 2 ? "#facc15" : "#ff5a1f";
+  if (d.stun > 0) color = stunColor(d);
+  square(d.px, d.py, 26, color);
+
+  // two eyes on the side the dragon is looking
+  const f = d.facing;
+  const cx = d.px + f.dx * 0.25, cy = d.py + f.dy * 0.25;
+  const sideX = f.dy !== 0 ? 0.18 : 0, sideY = f.dx !== 0 ? 0.18 : 0;
+  square(cx + sideX, cy + sideY, 6, "#fff");
+  square(cx - sideX, cy - sideY, 6, "#fff");
+  chaseMark(d);
+}
+
+function drawOgre(o) {
+  // dark green = wandering, bright green = chasing, purple = stunned, brown flash = lifting the club
+  let color = o.chasing ? "#4ade80" : "#15803d";
+  if (o.windup > 0) color = Math.floor(o.windup * 20) % 2 ? "#a16207" : "#4ade80";
+  if (o.stun > 0) color = stunColor(o);
+  square(o.px, o.py, 28, color);
+
+  // two eyes looking right at you, because the ogre sees all the way around
+  square(o.px - 0.15, o.py - 0.1, 6, "#fff");
+  square(o.px + 0.15, o.py - 0.1, 6, "#fff");
+
+  // the club, held on the side the ogre is facing
+  const f = o.facing;
+  square(o.px + f.dx * 0.45, o.py + f.dy * 0.45, 10, "#78350f");
+  chaseMark(o);
+}
+
+function drawFlyer(m) {
+  // a shadow on the ground, so you can tell it is up in the air
+  ctx.fillStyle = "rgba(0,0,0,0.45)";
+  ctx.fillRect(m.px * TILE + 7, m.py * TILE + 11, 22, 22);
+
+  // body and wings
+  const color = m.stun > 0 ? stunColor(m) : "#db2777";
+  const across = Math.abs(m.vx) >= Math.abs(m.vy);   // flying more sideways than up and down
+  const wx = across ? 0 : 0.42, wy = across ? 0.42 : 0;
+  square(m.px - 0.12 + wx, m.py - 0.12 + wy, 12, m.stun > 0 ? color : "#f9a8d4");
+  square(m.px - 0.12 - wx, m.py - 0.12 - wy, 12, m.stun > 0 ? color : "#f9a8d4");
+  square(m.px - 0.12, m.py - 0.12, 22, color);
+
+  // two eyes, looking the way it flies
+  const fx = Math.sign(Math.round(m.vx * 2)), fy = Math.sign(Math.round(m.vy * 2));
+  const cx = m.px - 0.12 + fx * 0.18, cy = m.py - 0.12 + fy * 0.18;
+  const sideX = across ? 0 : 0.14, sideY = across ? 0.14 : 0;
+  square(cx + sideX, cy + sideY, 5, "#fff");
+  square(cx - sideX, cy - sideY, 5, "#fff");
+}
+
+function draw() {
+  ctx.fillStyle = "#222";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  for (let y = 0; y < ROWS; y++) {
+    for (let x = 0; x < COLS; x++) {
+      if (MAZE[y][x] === "#") {
+        ctx.fillStyle = "#888";
+        ctx.fillRect(x * TILE + 1, y * TILE + 1, TILE - 2, TILE - 2);
+      }
+    }
+  }
+  if (state !== "title") {
+    coins.forEach(function (key) {
+      const p = key.split(",");
+      square(+p[0], +p[1], 8, "#f5b921");
+    });
+
+    monsters.forEach(function (m) {
+      if (m.kind === "dragon") drawDragon(m);
+      if (m.kind === "ogre") drawOgre(m);
+    });
+
+    // dragon fire and ogre clubs
+    monsters.forEach(function (m) {
+      m.attackSquares.forEach(function (s, i) {
+        if (m.kind === "ogre") {
+          square(s.x, s.y, 18, "#78350f");
+        } else {
+          square(s.x, s.y, 28, (Math.floor(m.attackTimer * 16) + i) % 2 ? "#f97316" : "#fde047");
+        }
+      });
+    });
+
+    // knight, with a light patch on the side he is facing
+    square(knight.px, knight.py, 24, "#3b82f6");
+    square(knight.px + knight.facing.dx * 0.25, knight.py + knight.facing.dy * 0.25, 8, "#bfdbfe");
+    if (swingTimer > 0) {
+      for (let i = 1; i <= SWORD_REACH; i++) {
+        const sx = knight.px + knight.facing.dx * i, sy = knight.py + knight.facing.dy * i;
+        if (!isOpen(Math.round(sx), Math.round(sy))) break;
+        ctx.fillStyle = "#fff";
+        if (knight.facing.dx !== 0) ctx.fillRect(sx * TILE + 2, sy * TILE + 12, TILE - 4, 8);
+        else ctx.fillRect(sx * TILE + 12, sy * TILE + 2, 8, TILE - 4);
+      }
+    }
+    // the shield: a thick bar on the side the knight is facing
+    if (isShielding() && state === "play") {
+      const f = knight.facing, x0 = knight.px * TILE, y0 = knight.py * TILE;
+      ctx.fillStyle = "#22d3ee";
+      if (f.dx > 0) ctx.fillRect(x0 + TILE - 6, y0 + 1, 6, TILE - 2);
+      if (f.dx < 0) ctx.fillRect(x0, y0 + 1, 6, TILE - 2);
+      if (f.dy > 0) ctx.fillRect(x0 + 1, y0 + TILE - 6, TILE - 2, 6);
+      if (f.dy < 0) ctx.fillRect(x0 + 1, y0, TILE - 2, 6);
+    }
+
+    // flying dragons go on top of everything, because they are up in the air
+    monsters.forEach(function (m) { if (m.kind === "flyer") drawFlyer(m); });
+  }
+
+  const go = TOUCH ? "Tap here" : "ENTER";
+  if (state === "title") banner("THE KNIGHT MAN", TOUCH ? "Tap here to start" : "Press ENTER to start");
+  if (state === "hit") banner("OUCH!", hitBy);
+  if (state === "level") banner("LEVEL " + (level + 1), LEVELS[level].news);
+  if (state === "won") banner("YOU WIN!", "All " + MAX_LEVEL + " levels! Score " + score + ". " + go + " to play again");
+  if (state === "over") banner("GAME OVER", "Level " + level + ", score " + score + ". " + go + " to try again");
+
+  document.getElementById("score").textContent = state === "title" ? 0 : score;
+  document.getElementById("level").textContent = state === "title" ? 1 : level;
+  document.getElementById("lives").textContent = state === "title" ? START_LIVES : lives;
+  document.getElementById("coinsLeft").textContent = state === "title" ? "-" : coins.size;
+  const bar = document.getElementById("shieldBar");
+  bar.style.width = (state === "title" ? 100 : Math.round(shield * 100)) + "%";
+  bar.style.background = shieldBroken ? "#666" : "#22d3ee";
+}
+
+// ---------- THE GAME LOOP ----------
+let lastTime = 0;
+function loop(time) {
+  const dt = Math.min(0.05, (time - lastTime) / 1000);
+  lastTime = time;
+  update(dt);
+  draw();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

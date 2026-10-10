@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>The Knight Man (v4)</title>
+<title>The Knight Man (v5)</title>
 <style>
   body { margin: 0; background: #111; color: #eee; font-family: "Courier New", monospace;
          display: flex; flex-direction: column; align-items: center; }
@@ -79,11 +79,14 @@
 </div>
 <div id="help">
   <span class="keyHelp">ARROW KEYS: move &nbsp;|&nbsp; SPACE: swing sword &nbsp;|&nbsp; hold S: shield &nbsp;|&nbsp; ENTER: start<br>
-  The shield only covers the side you face. Fire and clubs stop at it. Hold S and tap an arrow to turn it.</span>
-  <span class="touchHelp">Tap the game to start. Hold SHIELD and tap an arrow to turn your shield.</span>
+  The shield only covers the side you face. Fire and clubs stop at it. Hold S and tap an arrow to turn it.<br>
+  Collect most of the coins and an archer shows up in the forest. Stand next to him and he joins you.</span>
+  <span class="touchHelp">Tap the game to start. Hold SHIELD and tap an arrow to turn your shield. Collect most of the coins and an archer shows up in the forest.</span>
 </div>
 
 <script>
+const VERSION = 5;                // shows on the title screen, so you know which game loaded
+
 // =====================================================
 // NUMBERS YOU CAN CHANGE (this is called "tuning")
 // Change one number, save, reload the page, and play.
@@ -127,6 +130,17 @@ const FLYER_SPEED = 3;            // squares per second
 const FLYER_PATH = [
   { x: 3, y: 3 }, { x: 15, y: 11 }, { x: 15, y: 3 }, { x: 3, y: 11 }
 ];
+
+// Archers (they follow the knight in a train and shoot arrows)
+const ARCHER_COINS = 0.75;        // the archer shows up when this much of the coins are collected (0.75 is 75%)
+const FOREST_STARTS_AT = 10;      // the forest is this column and everything to the right of it
+const ARROW_RANGE = 5;            // how many squares away an archer can shoot
+const ARROW_REST = 3;             // seconds between one archer's arrows
+const ARROW_STUN_TIME = 2;        // seconds a monster is stunned by an arrow
+const ARROW_SPEED = 16;           // squares per second
+const ARCHER_SHIELD_SECONDS = 2;  // how long an archer's shield lasts
+const ARCHER_SHIELD_REFILL_SECONDS = 5;  // how long an empty archer shield takes to fill up
+const NOTICE_TIME = 3;            // seconds a message stays at the top of the game
 
 // Levels: who is in each level. The game ends after the last one.
 const LEVELS = [
@@ -183,6 +197,14 @@ let score, lives, level, coins, knight, monsters = [];
 let shield, shieldBroken, shieldKey = false;
 let swingTimer, swordRest;
 let held = [];         // arrow keys being held down, newest last
+let archers = [];      // the archers in your train. The first one walks right behind the knight
+let trail = [];        // the squares the knight just walked on, newest first. The train walks on these
+let waitingArcher = null;   // an archer hiding in the forest, waiting for the knight to come get him
+let archerCame = false;     // has this level's archer shown up yet?
+let totalCoins = 0;         // how many coins the level started with
+let arrows = [];            // arrows flying right now
+let notice = "", noticeTimer = 0;   // a short message at the top of the game
+const TRAIL_KEEP = 12;      // how many squares of the knight's path we remember
 
 function isOpen(x, y) {
   return y >= 0 && y < ROWS && x >= 0 && x < COLS && MAZE[y][x] !== "#";
@@ -208,6 +230,7 @@ function fireRest(lv) {
 function newGame() {
   score = 0;
   lives = START_LIVES;
+  archers = [];
   startLevel(1);
 }
 
@@ -219,8 +242,22 @@ function startLevel(n) {
       if (isOpen(x, y) && !(x === KNIGHT_START.x && y === KNIGHT_START.y)) coins.add(x + "," + y);
     }
   }
+  totalCoins = coins.size;
+  waitingArcher = null;
+  archerCame = false;
+  noticeTimer = 0;
   resetPositions();
   state = "play";
+}
+
+function makeArcher() {
+  return { px: 0, py: 0, back: null, rest: 1, shield: 1, shieldBroken: false, shieldUp: false };
+}
+
+// Shows a short message at the top of the game.
+function say(text) {
+  notice = text;
+  noticeTimer = NOTICE_TIME;
 }
 
 // kind is "dragon", "ogre", or "flyer"
@@ -245,6 +282,12 @@ function resetPositions() {
   shieldBroken = false;
   swingTimer = 0;
   swordRest = 0;
+  // your archers stay with you. They bunch up on the knight's square, then line up as he walks.
+  trail = [];
+  for (let i = 0; i < TRAIL_KEEP; i++) trail.push({ x: knight.tx, y: knight.ty });
+  arrows = [];
+  archers.forEach(function (a) { a.rest = 1; a.shield = 1; a.shieldBroken = false; a.shieldUp = false; });
+  placeArchers();
 }
 
 // ---------- KEYS AND BUTTONS ----------
@@ -395,6 +438,8 @@ function knightNext() {
 }
 
 function knightArrives() {
+  trail.unshift({ x: knight.tx, y: knight.ty });
+  trail.length = TRAIL_KEEP;
   const key = knight.tx + "," + knight.ty;
   if (coins.has(key)) {
     coins.delete(key);
@@ -406,6 +451,8 @@ function knightArrives() {
         state = "level";
         stateTimer = LEVEL_BANNER_TIME;
       }
+    } else {
+      archerComes();
     }
   }
 }
@@ -416,9 +463,15 @@ function onKnight(x, y) {
   if (knight.moving && x === knight.tx + knight.moving.dx && y === knight.ty + knight.moving.dy) return true;
   return false;
 }
-// A monster can't step onto the knight through the front of his shield.
+// Is there a shield on this square that stops something moving this way?
+// It can be the knight's shield or an archer's shield.
+function shieldBlocksSquare(x, y, dx, dy) {
+  if (onKnight(x, y) && shieldStopsDir(dx, dy)) return true;
+  return archers.some(function (a) { return archerOn(a, x, y) && archerStopsDir(a, dx, dy); });
+}
+// A monster can't step onto the knight or an archer through a shield.
 function shieldBlocksStep(m, step) {
-  return onKnight(m.tx + step.dx, m.ty + step.dy) && shieldStopsDir(step.dx, step.dy);
+  return shieldBlocksSquare(m.tx + step.dx, m.ty + step.dy, step.dx, step.dy);
 }
 
 // Is there a clear straight line (no wall or tree) between two squares?
@@ -542,25 +595,31 @@ function ogreArrives(m) {
   }
 }
 
-// If the shield goes up while a monster is stepping onto the knight from the front, send it back.
+// If a shield goes up while a monster is stepping onto the knight or an archer, send it back.
 function bounceOffShield(m) {
   if (!m.moving) return;
   const gx = m.tx + m.moving.dx, gy = m.ty + m.moving.dy;
-  if (!onKnight(gx, gy) || !shieldStopsDir(m.moving.dx, m.moving.dy)) return;
+  if (!shieldBlocksSquare(gx, gy, m.moving.dx, m.moving.dy)) return;
   const back = { dx: -m.moving.dx, dy: -m.moving.dy };
   m.tx = gx; m.ty = gy;
   m.moving = back;
 }
 
+// The squares in front of a monster that its fire or club can reach. Walls stop it.
+function squaresInFront(m) {
+  const squares = [];
+  for (let i = 1; i <= attackReach(m); i++) {
+    const ax = m.tx + m.facing.dx * i, ay = m.ty + m.facing.dy * i;
+    if (!isOpen(ax, ay)) break;
+    squares.push({ x: ax, y: ay });
+  }
+  return squares;
+}
+
 // Dragon fire or the ogre's club comes out the way the monster is facing.
 function startAttack(m) {
   m.attackDir = m.facing;
-  m.attackSquares = [];
-  for (let i = 1; i <= attackReach(m); i++) {
-    const ax = m.tx + m.attackDir.dx * i, ay = m.ty + m.attackDir.dy * i;
-    if (!isOpen(ax, ay)) break;
-    m.attackSquares.push({ x: ax, y: ay });
-  }
+  m.attackSquares = squaresInFront(m);
   if (m.kind === "ogre") {
     m.attackTimer = CLUB_TIME;
     m.attackRest = CLUB_REST;
@@ -570,21 +629,28 @@ function startAttack(m) {
   }
 }
 
-// Is the knight's shield stopping this fire or club right now?
-function attackBlocked(m) {
-  const kx = Math.round(knight.px), ky = Math.round(knight.py);
-  return m.attackSquares.some(function (s) { return s.x === kx && s.y === ky; }) &&
-         shieldStopsDir(m.attackDir.dx, m.attackDir.dy);
+// Who is holding a shield on this square that stops something moving this way?
+// Gives back the knight, an archer, or null if nobody is.
+function shieldHolderOn(x, y, dx, dy) {
+  if (x === Math.round(knight.px) && y === Math.round(knight.py) && shieldStopsDir(dx, dy)) return knight;
+  return archers.find(function (a) { return archerOn(a, x, y) && archerStopsDir(a, dx, dy); }) || null;
+}
+
+// Whose shield is stopping this fire or club right now? (null if nobody's)
+function attackStoppedBy(m) {
+  for (const s of m.attackSquares) {
+    const holder = shieldHolderOn(s.x, s.y, m.attackDir.dx, m.attackDir.dy);
+    if (holder) return holder;
+  }
+  return null;
 }
 
 // The squares the fire or club reaches right now.
-// It stops at the shield, so the knight and anything behind him are safe.
+// It stops at the first shield, so whoever holds it and anything behind them are safe.
 function attackSquaresNow(m) {
-  if (!attackBlocked(m)) return m.attackSquares;
-  const kx = Math.round(knight.px), ky = Math.round(knight.py);
   const reached = [];
   for (const s of m.attackSquares) {
-    if (s.x === kx && s.y === ky) break;
+    if (shieldHolderOn(s.x, s.y, m.attackDir.dx, m.attackDir.dy)) break;
     reached.push(s);
   }
   return reached;
@@ -594,6 +660,174 @@ function attackSquaresNow(m) {
 function attackHitsKnight(m) {
   const kx = Math.round(knight.px), ky = Math.round(knight.py);
   return attackSquaresNow(m).some(function (s) { return s.x === kx && s.y === ky; });
+}
+
+// =====================================================
+// THE ARCHERS (the knight's train)
+// =====================================================
+
+// When most of the coins are collected, an archer steps out next to a tree in the forest.
+function archerComes() {
+  if (archerCame || coins.size > totalCoins * (1 - ARCHER_COINS)) return;
+  archerCame = true;
+  const spots = [];
+  for (let y = 1; y < ROWS - 1; y++) {
+    for (let x = FOREST_STARTS_AT; x < COLS - 1; x++) {
+      if (!isOpen(x, y) || onKnight(x, y)) continue;
+      const byTree = DIR_LIST.some(function (d) {
+        const tx = x + d.dx, ty = y + d.dy;
+        return !isOpen(tx, ty) && tx > 0 && tx < COLS - 1 && ty > 0 && ty < ROWS - 1;
+      });
+      if (byTree) spots.push({ x: x, y: y });
+    }
+  }
+  // not right next to the knight, so he has to go and get him
+  const far = spots.filter(function (p) { return Math.abs(p.x - knight.tx) + Math.abs(p.y - knight.ty) > 3; });
+  const pick = far.length ? far : spots;
+  if (!pick.length) return;
+  waitingArcher = pick[Math.floor(Math.random() * pick.length)];
+  say("An archer is hiding in the forest! Go get him");
+}
+
+// The archer joins the back of the train when the knight stands next to him.
+function archerJoins() {
+  if (!waitingArcher) return;
+  const kx = Math.round(knight.px), ky = Math.round(knight.py);
+  if (Math.abs(kx - waitingArcher.x) + Math.abs(ky - waitingArcher.y) > 1) return;
+  waitingArcher = null;
+  archers.push(makeArcher());
+  placeArchers();
+  say("The archer joined you!");
+}
+
+// Each archer walks on the square the one in front of him just left, like the tail in Snake.
+function placeArchers() {
+  const step = knight.moving ? Math.abs(knight.px - knight.tx) + Math.abs(knight.py - knight.ty) : 0;
+  archers.forEach(function (a, i) {
+    const from = trail[i + 1], to = trail[i];
+    a.px = from.x + (to.x - from.x) * step;
+    a.py = from.y + (to.y - from.y) * step;
+    // His shield covers his back: the side away from whoever walks in front of him.
+    const ahead = i === 0 ? knight : archers[i - 1];
+    const bx = Math.round(a.px) - Math.round(ahead.px), by = Math.round(a.py) - Math.round(ahead.py);
+    a.back = Math.abs(bx) + Math.abs(by) === 1 ? { dx: bx, dy: by } : null;
+  });
+}
+
+function archerOn(a, x, y) {
+  return Math.round(a.px) === x && Math.round(a.py) === y;
+}
+// An archer's shield stops something that comes at his back.
+function archerStopsDir(a, dx, dy) {
+  return a.shieldUp && a.back !== null && dx * a.back.dx + dy * a.back.dy < 0;
+}
+// Is this monster on the archer's back side?
+function behindArcher(a, m) {
+  return a.back !== null && (m.px - a.px) * a.back.dx + (m.py - a.py) * a.back.dy > 0.3;
+}
+
+// Is something coming at this archer's back right now? If so, he raises his shield by himself.
+function dangerAtBack(a) {
+  if (!a.back) return false;
+  const ax = Math.round(a.px), ay = Math.round(a.py);
+  return monsters.some(function (m) {
+    if (m.stun > 0) return false;
+    if (m.kind === "flyer") {
+      return behindArcher(a, m) && Math.hypot(m.px - a.px, m.py - a.py) < 1.5 &&
+             m.vx * a.back.dx + m.vy * a.back.dy < 0;
+    }
+    // a monster that is lifting its club or about to breathe fire, with the archer in the way
+    if (m.windup > 0 || m.attackTimer > 0) {
+      const dir = m.attackTimer > 0 ? m.attackDir : m.facing;
+      const squares = m.attackTimer > 0 ? m.attackSquares : squaresInFront(m);
+      if (dir.dx * a.back.dx + dir.dy * a.back.dy < 0 &&
+          squares.some(function (s) { return s.x === ax && s.y === ay; })) return true;
+    }
+    // a monster right behind him
+    return behindArcher(a, m) && Math.abs(m.px - a.px) + Math.abs(m.py - a.py) < 1.5;
+  });
+}
+
+// The archer's shield goes up by itself when there is danger at his back.
+// It runs out and fills back up, just like the knight's shield.
+function archerShields(dt) {
+  archers.forEach(function (a) {
+    a.shieldUp = !a.shieldBroken && a.shield > 0 && dangerAtBack(a);
+    if (a.shieldUp) {
+      a.shield -= dt / ARCHER_SHIELD_SECONDS;
+      if (a.shield <= 0) { a.shield = 0; a.shieldBroken = true; a.shieldUp = false; }
+    } else {
+      a.shield = Math.min(1, a.shield + dt / ARCHER_SHIELD_REFILL_SECONDS);
+      if (a.shield >= 0.25) a.shieldBroken = false;
+    }
+  });
+}
+
+// Did a monster, fire, or a club get this archer?
+function archerIsHit(a) {
+  const ax = Math.round(a.px), ay = Math.round(a.py);
+  if (ax === Math.round(knight.px) && ay === Math.round(knight.py)) return false;   // tucked in behind the knight
+  return monsters.some(function (m) {
+    if (m.stun > 0) return false;
+    if (m.kind === "flyer") {
+      return Math.hypot(m.px - a.px, m.py - a.py) < 0.7 && !archerStopsDir(a, m.vx, m.vy);
+    }
+    if (m.attackTimer > 0 && attackSquaresNow(m).some(function (s) { return s.x === ax && s.y === ay; })) return true;
+    const touching = Math.abs(m.px - a.px) + Math.abs(m.py - a.py) < 0.7;
+    return touching && !(a.shieldUp && behindArcher(a, m));
+  });
+}
+
+// Archers that get hit are gone. The knight keeps his life.
+function loseHitArchers() {
+  const before = archers.length;
+  archers = archers.filter(function (a) { return !archerIsHit(a); });
+  if (archers.length < before) {
+    placeArchers();
+    say("You lost an archer!");
+  }
+}
+
+// An archer shoots the closest monster he can see within ARROW_RANGE squares.
+// He can't shoot while his shield is up. Walls stop arrows, but the flying dragon is up in the air.
+function archersShoot(dt) {
+  archers.forEach(function (a) {
+    a.rest = Math.max(0, a.rest - dt);
+    if (a.rest > 0 || a.shieldUp) return;
+    let target = null, best = ARROW_RANGE;
+    monsters.forEach(function (m) {
+      if (m.stun > 0 || arrows.some(function (ar) { return ar.target === m; })) return;
+      const far = Math.hypot(m.px - a.px, m.py - a.py);
+      if (far > best) return;
+      if (m.kind !== "flyer" &&
+          !clearLine(Math.round(a.px), Math.round(a.py), Math.round(m.px), Math.round(m.py))) return;
+      target = m;
+      best = far;
+    });
+    if (target) {
+      arrows.push({ x: a.px, y: a.py, dx: 0, dy: 0, target: target });
+      a.rest = ARROW_REST;
+    }
+  });
+}
+
+// Arrows fly to their monster and stun it.
+function moveArrows(dt) {
+  arrows = arrows.filter(function (ar) {
+    const m = ar.target;
+    const gx = m.px - ar.x, gy = m.py - ar.y, left = Math.hypot(gx, gy), go = ARROW_SPEED * dt;
+    if (go >= left) {
+      m.stun = Math.max(m.stun, ARROW_STUN_TIME);
+      m.windup = 0;
+      m.lean = 0;
+      m.attackTimer = 0;
+      m.attackSquares = [];
+      return false;
+    }
+    ar.dx = gx / left; ar.dy = gy / left;
+    ar.x += ar.dx * go; ar.y += ar.dy * go;
+    return true;
+  });
 }
 
 function swordHits(m) {
@@ -680,8 +914,15 @@ function update(dt) {
   swingTimer = Math.max(0, swingTimer - dt);
   swordRest = Math.max(0, swordRest - dt);
 
+  noticeTimer = Math.max(0, noticeTimer - dt);
+
   moveThing(knight, KNIGHT_SPEED, dt, knightNext, knightArrives);
   if (state !== "play") return;
+
+  // the train follows the knight, and archers raise their shields if there is danger behind them
+  archerJoins();
+  placeArchers();
+  archerShields(dt);
 
   const kx = Math.round(knight.px), ky = Math.round(knight.py);
   for (const m of monsters) {
@@ -717,7 +958,8 @@ function update(dt) {
     const speed = m.kind === "ogre"
       ? (m.chasing ? OGRE_CHASE_SPEED : OGRE_WANDER_SPEED)
       : (m.chasing ? DRAGON_CHASE_SPEED : DRAGON_WANDER_SPEED);
-    moveThing(m, speed, dt, function () { return monsterNext(m); }, function () { ogreArrives(m); });
+    // a stunned monster freezes right where it is
+    if (m.stun <= 0) moveThing(m, speed, dt, function () { return monsterNext(m); }, function () { ogreArrives(m); });
 
     const name = m.kind === "ogre" ? "The ogre" : "The dragon";
     if (m.stun <= 0) {
@@ -734,6 +976,10 @@ function update(dt) {
       return;
     }
   }
+
+  loseHitArchers();
+  archersShoot(dt);
+  moveArrows(dt);
 }
 
 // ---------- DRAWING ----------
@@ -821,6 +1067,39 @@ function drawFlyer(m) {
   square(cx - sideX, cy - sideY, 5, "#fff");
 }
 
+// A shield bar on one side of a square.
+// Fire or a club that the shield stopped piles up on the outside of it.
+function drawShield(px, py, dir, thick, stopped) {
+  const x0 = px * TILE, y0 = py * TILE;
+  stopped.forEach(function (m) {
+    const deep = 8, wide = m.kind === "ogre" ? 18 : TILE - 4, side = (TILE - wide) / 2;
+    ctx.fillStyle = m.kind === "ogre" ? "#78350f"
+                  : (Math.floor(m.attackTimer * 16) % 2 ? "#f97316" : "#fde047");
+    if (dir.dx > 0) ctx.fillRect(x0 + TILE, y0 + side, deep, wide);
+    if (dir.dx < 0) ctx.fillRect(x0 - deep, y0 + side, deep, wide);
+    if (dir.dy > 0) ctx.fillRect(x0 + side, y0 + TILE, wide, deep);
+    if (dir.dy < 0) ctx.fillRect(x0 + side, y0 - deep, wide, deep);
+  });
+  // the shield flashes white while it is blocking something
+  ctx.fillStyle = stopped.length && Math.floor(Date.now() / 60) % 2 ? "#fff" : "#22d3ee";
+  if (dir.dx > 0) ctx.fillRect(x0 + TILE - thick, y0 + 1, thick, TILE - 2);
+  if (dir.dx < 0) ctx.fillRect(x0, y0 + 1, thick, TILE - 2);
+  if (dir.dy > 0) ctx.fillRect(x0 + 1, y0 + TILE - thick, TILE - 2, thick);
+  if (dir.dy < 0) ctx.fillRect(x0 + 1, y0, TILE - 2, thick);
+}
+
+// The monsters whose fire or club this shield holder is stopping right now.
+function stoppedBy(holder) {
+  return monsters.filter(function (m) { return m.attackTimer > 0 && attackStoppedBy(m) === holder; });
+}
+
+// An archer: a small light-blue square with a brown bow.
+function drawArcher(px, py) {
+  square(px, py, 18, "#93c5fd");
+  ctx.fillStyle = "#78350f";
+  ctx.fillRect(px * TILE + 9, py * TILE + 14, 14, 4);
+}
+
 function draw() {
   ctx.fillStyle = "#222";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -854,6 +1133,30 @@ function draw() {
       });
     });
 
+    // the archer hiding in the forest blinks, so you can find him
+    if (waitingArcher) {
+      if (Math.floor(Date.now() / 250) % 2) square(waitingArcher.x, waitingArcher.y, 28, "#fff");
+      drawArcher(waitingArcher.x, waitingArcher.y);
+    }
+
+    // the train, back to front, so the knight is on top when they bunch up
+    for (let i = archers.length - 1; i >= 0; i--) {
+      const a = archers[i];
+      drawArcher(a.px, a.py);
+      if (a.shieldUp && state === "play") drawShield(a.px, a.py, a.back, 5, stoppedBy(a));
+    }
+
+    // arrows
+    ctx.strokeStyle = "#fef3c7";
+    ctx.lineWidth = 3;
+    arrows.forEach(function (ar) {
+      const hx = (ar.x + 0.5) * TILE, hy = (ar.y + 0.5) * TILE;
+      ctx.beginPath();
+      ctx.moveTo(hx - ar.dx * 14, hy - ar.dy * 14);
+      ctx.lineTo(hx, hy);
+      ctx.stroke();
+    });
+
     // knight, with a light patch on the side he is facing
     square(knight.px, knight.py, 24, "#3b82f6");
     square(knight.px + knight.facing.dx * 0.25, knight.py + knight.facing.dy * 0.25, 8, "#bfdbfe");
@@ -867,35 +1170,29 @@ function draw() {
       }
     }
     // the shield: a thick bar on the side the knight is facing
-    if (isShielding() && state === "play") {
-      const f = knight.facing, x0 = knight.px * TILE, y0 = knight.py * TILE;
-      const blocking = monsters.filter(attackBlocked);
-
-      // fire or a club that the shield stopped: it piles up on the outside of the shield
-      blocking.forEach(function (m) {
-        const deep = 8, wide = m.kind === "ogre" ? 18 : TILE - 4, side = (TILE - wide) / 2;
-        ctx.fillStyle = m.kind === "ogre" ? "#78350f"
-                      : (Math.floor(m.attackTimer * 16) % 2 ? "#f97316" : "#fde047");
-        if (f.dx > 0) ctx.fillRect(x0 + TILE, y0 + side, deep, wide);
-        if (f.dx < 0) ctx.fillRect(x0 - deep, y0 + side, deep, wide);
-        if (f.dy > 0) ctx.fillRect(x0 + side, y0 + TILE, wide, deep);
-        if (f.dy < 0) ctx.fillRect(x0 + side, y0 - deep, wide, deep);
-      });
-
-      // the shield flashes white while it is blocking something
-      ctx.fillStyle = blocking.length && Math.floor(Date.now() / 60) % 2 ? "#fff" : "#22d3ee";
-      if (f.dx > 0) ctx.fillRect(x0 + TILE - 6, y0 + 1, 6, TILE - 2);
-      if (f.dx < 0) ctx.fillRect(x0, y0 + 1, 6, TILE - 2);
-      if (f.dy > 0) ctx.fillRect(x0 + 1, y0 + TILE - 6, TILE - 2, 6);
-      if (f.dy < 0) ctx.fillRect(x0 + 1, y0, TILE - 2, 6);
-    }
+    if (isShielding() && state === "play") drawShield(knight.px, knight.py, knight.facing, 6, stoppedBy(knight));
 
     // flying dragons go on top of everything, because they are up in the air
     monsters.forEach(function (m) { if (m.kind === "flyer") drawFlyer(m); });
+
+    // a short message at the top, over the top wall
+    if (noticeTimer > 0 && state === "play") {
+      ctx.fillStyle = "rgba(0,0,0,0.8)";
+      ctx.fillRect(0, 0, canvas.width, TILE);
+      ctx.fillStyle = "#fde047";
+      ctx.textAlign = "center";
+      ctx.font = "bold 17px Courier New";
+      ctx.fillText(notice, canvas.width / 2, 22);
+    }
   }
 
   const go = TOUCH ? "Tap here" : "ENTER";
-  if (state === "title") banner("THE KNIGHT MAN", TOUCH ? "Tap here to start" : "Press ENTER to start");
+  if (state === "title") {
+    banner("THE KNIGHT MAN", TOUCH ? "Tap here to start" : "Press ENTER to start");
+    ctx.fillStyle = "#d1d5db";
+    ctx.font = "16px Courier New";
+    ctx.fillText("version " + VERSION, canvas.width / 2, 300);
+  }
   if (state === "hit") banner("OUCH!", hitBy);
   if (state === "level") banner("LEVEL " + (level + 1), LEVELS[level].news);
   if (state === "won") banner("YOU WIN!", "All " + MAX_LEVEL + " levels! Score " + score + ". " + go + " to play again");

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>The Knight Man (v3)</title>
+<title>The Knight Man (v4)</title>
 <style>
   body { margin: 0; background: #111; color: #eee; font-family: "Courier New", monospace;
          display: flex; flex-direction: column; align-items: center; }
@@ -79,7 +79,7 @@
 </div>
 <div id="help">
   <span class="keyHelp">ARROW KEYS: move &nbsp;|&nbsp; SPACE: swing sword &nbsp;|&nbsp; hold S: shield &nbsp;|&nbsp; ENTER: start<br>
-  The shield only covers the side you face. Hold S and tap an arrow to turn it.</span>
+  The shield only covers the side you face. Fire and clubs stop at it. Hold S and tap an arrow to turn it.</span>
   <span class="touchHelp">Tap the game to start. Hold SHIELD and tap an arrow to turn your shield.</span>
 </div>
 
@@ -570,11 +570,30 @@ function startAttack(m) {
   }
 }
 
+// Is the knight's shield stopping this fire or club right now?
+function attackBlocked(m) {
+  const kx = Math.round(knight.px), ky = Math.round(knight.py);
+  return m.attackSquares.some(function (s) { return s.x === kx && s.y === ky; }) &&
+         shieldStopsDir(m.attackDir.dx, m.attackDir.dy);
+}
+
+// The squares the fire or club reaches right now.
+// It stops at the shield, so the knight and anything behind him are safe.
+function attackSquaresNow(m) {
+  if (!attackBlocked(m)) return m.attackSquares;
+  const kx = Math.round(knight.px), ky = Math.round(knight.py);
+  const reached = [];
+  for (const s of m.attackSquares) {
+    if (s.x === kx && s.y === ky) break;
+    reached.push(s);
+  }
+  return reached;
+}
+
 // The fire or club hits the knight, unless his shield faces it.
 function attackHitsKnight(m) {
   const kx = Math.round(knight.px), ky = Math.round(knight.py);
-  if (!m.attackSquares.some(function (s) { return s.x === kx && s.y === ky; })) return false;
-  return !shieldStopsDir(m.attackDir.dx, m.attackDir.dy);
+  return attackSquaresNow(m).some(function (s) { return s.x === kx && s.y === ky; });
 }
 
 function swordHits(m) {
@@ -826,7 +845,7 @@ function draw() {
 
     // dragon fire and ogre clubs
     monsters.forEach(function (m) {
-      m.attackSquares.forEach(function (s, i) {
+      attackSquaresNow(m).forEach(function (s, i) {
         if (m.kind === "ogre") {
           square(s.x, s.y, 18, "#78350f");
         } else {
@@ -850,7 +869,21 @@ function draw() {
     // the shield: a thick bar on the side the knight is facing
     if (isShielding() && state === "play") {
       const f = knight.facing, x0 = knight.px * TILE, y0 = knight.py * TILE;
-      ctx.fillStyle = "#22d3ee";
+      const blocking = monsters.filter(attackBlocked);
+
+      // fire or a club that the shield stopped: it piles up on the outside of the shield
+      blocking.forEach(function (m) {
+        const deep = 8, wide = m.kind === "ogre" ? 18 : TILE - 4, side = (TILE - wide) / 2;
+        ctx.fillStyle = m.kind === "ogre" ? "#78350f"
+                      : (Math.floor(m.attackTimer * 16) % 2 ? "#f97316" : "#fde047");
+        if (f.dx > 0) ctx.fillRect(x0 + TILE, y0 + side, deep, wide);
+        if (f.dx < 0) ctx.fillRect(x0 - deep, y0 + side, deep, wide);
+        if (f.dy > 0) ctx.fillRect(x0 + side, y0 + TILE, wide, deep);
+        if (f.dy < 0) ctx.fillRect(x0 + side, y0 - deep, wide, deep);
+      });
+
+      // the shield flashes white while it is blocking something
+      ctx.fillStyle = blocking.length && Math.floor(Date.now() / 60) % 2 ? "#fff" : "#22d3ee";
       if (f.dx > 0) ctx.fillRect(x0 + TILE - 6, y0 + 1, 6, TILE - 2);
       if (f.dx < 0) ctx.fillRect(x0, y0 + 1, 6, TILE - 2);
       if (f.dy > 0) ctx.fillRect(x0 + 1, y0 + TILE - 6, TILE - 2, 6);

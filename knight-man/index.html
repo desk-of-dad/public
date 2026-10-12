@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>The Knight Man (v6)</title>
+<title>The Knight Man (v7)</title>
 <style>
   body { margin: 0; background: #111; color: #eee; font-family: "Courier New", monospace;
          display: flex; flex-direction: column; align-items: center; }
@@ -70,7 +70,7 @@
   <span>LIVES: <span id="lives">3</span></span>
 </div>
 <div id="wrap">
-  <canvas id="game" width="608" height="480"></canvas>
+  <canvas id="game" width="608" height="512"></canvas>
   <div id="stick">
     <div id="dUp" class="mark">&#9650;</div><div id="dLeft" class="mark">&#9664;</div>
     <div id="dRight" class="mark">&#9654;</div><div id="dDown" class="mark">&#9660;</div>
@@ -84,12 +84,13 @@
 <div id="help">
   <span class="keyHelp">ARROW KEYS: move &nbsp;|&nbsp; SPACE: swing sword &nbsp;|&nbsp; hold S: shield &nbsp;|&nbsp; ENTER: start<br>
   The shield only covers the side you face. Fire and clubs stop at it. Hold S and tap an arrow to turn it.<br>
-  Collect most of the coins and an archer shows up. Stand next to him and he joins you. Every level is a new place.</span>
-  <span class="touchHelp">Tap the game to start. Drag the stick to move. Hold SHIELD and push the stick to turn your shield. Collect most of the coins and an archer shows up. Every level is a new place.</span>
+  Collect most of the coins and an archer shows up. Stand next to him and he joins you. Every level is a new place.<br>
+  A story screen shows before every level. Press ENTER or SPACE to skip it.</span>
+  <span class="touchHelp">Tap the game to start. Drag the stick to move. Hold SHIELD and push the stick to turn your shield. Collect most of the coins and an archer shows up. Every level is a new place. Tap the story screen to skip it.</span>
 </div>
 
 <script>
-const VERSION = 6;                // shows on the title screen, so you know which game loaded
+const VERSION = 7;                // shows on the title screen, so you know which game loaded
 
 // =====================================================
 // NUMBERS YOU CAN CHANGE (this is called "tuning")
@@ -109,6 +110,7 @@ const SHIELD_REFILL_SECONDS = 5;  // how long an empty shield takes to fill up
 // Dragon (walks on the ground, only sees the way its eyes point, sees far)
 const DRAGON_WANDER_SPEED = 2.5;  // dragon speed when it can't see you
 const DRAGON_CHASE_SPEED = 4.5;    // dragon speed when it is chasing you
+const DRAGON_CLOSE_SIGHT = 1;     // up close, the dragon sees all the way around. This is how many squares away
 const FIRE_LENGTH_START = 2;      // squares of fire on level 1
 const FIRE_LONGER_EVERY = 3;      // fire grows 1 square every this many levels
 const FIRE_REST_START = 2;        // seconds between fire blasts on level 1
@@ -158,7 +160,11 @@ const LEVELS = [
   { dragons: 2, ogres: 2, flyers: 1, news: "A second ogre joins! The last level" }
 ];
 const MAX_LEVEL = LEVELS.length;
-const LEVEL_BANNER_TIME = 2;      // seconds the "LEVEL 2" sign shows
+const LEVEL_BANNER_TIME = 1.5;    // seconds the "LEVEL 1 DONE!" sign shows
+
+// The story screen (it shows before every level)
+const STORY_LINE_TIME = 1;        // seconds between one story line and the next
+const STORY_WAIT = 0.4;           // seconds before a button can skip the story, so you don't skip it by mistake
 
 // =====================================================
 // THE MAPS (a new place for every level)
@@ -167,12 +173,18 @@ const LEVEL_BANNER_TIME = 2;      // seconds the "LEVEL 2" sign shows
 // wall and floor are the colors of that place.
 // archerArea is the box where the archer shows up: [left column, top row, right column, bottom row].
 // archerNews is the message you see when he shows up.
+// story is the words on the story screen before the level. Keep each line shorter than 50 letters.
 // If you change a map, keep the start squares (just below the maps) open.
 // =====================================================
 const MAPS = [
   // Level 1. The castle is on the left and the grounds, with trees, are on the right.
   { name: "The Castle and Grounds", wall: "#888", floor: "#222",
     archerArea: [10, 1, 17, 13], archerNews: "An archer is hiding in the forest! Go get him",
+    story: [
+      "A dragon stole the king's gold!",
+      "Coins fell all over the castle and the grounds.",
+      "Pick up every coin. Don't let the dragon see you."
+    ],
     rows: [
       "###################",
       "#.......#.........#",
@@ -193,6 +205,11 @@ const MAPS = [
   // Level 2. Trees everywhere, and long open paths.
   { name: "The Deep Forest", wall: "#8b6b43", floor: "#16261a",
     archerArea: [1, 1, 17, 13], archerNews: "An archer is hiding behind a tree! Go get him",
+    story: [
+      "The trail of gold goes into the Deep Forest.",
+      "An ogre lives here. It swings a big club.",
+      "The paths are long, so the dragon can see far."
+    ],
     rows: [
       "###################",
       "#.................#",
@@ -213,6 +230,11 @@ const MAPS = [
   // Level 3. Walls all around, pillars, and a fountain in the middle.
   { name: "The Courtyard", wall: "#b8a47a", floor: "#2b2820",
     archerArea: [6, 4, 12, 10], archerNews: "An archer is hiding by the fountain! Go get him",
+    story: [
+      "The trail leads to an old courtyard.",
+      "A flying dragon guards it from the sky.",
+      "It flies right over the walls. Watch its shadow!"
+    ],
     rows: [
       "###################",
       "#.................#",
@@ -233,6 +255,11 @@ const MAPS = [
   // Level 4. Narrow halls and lots of corners.
   { name: "The Dungeon", wall: "#5d6b82", floor: "#15151d",
     archerArea: [1, 1, 17, 13], archerNews: "An archer broke out of his cell! Go get him",
+    story: [
+      "The gold goes down into the dungeon.",
+      "The halls are narrow, and a second dragon waits.",
+      "Keep your sword and your shield ready."
+    ],
     rows: [
       "###################",
       "#........#........#",
@@ -253,6 +280,11 @@ const MAPS = [
   // Level 5. A cave full of rocks.
   { name: "The Dragon's Lair", wall: "#75595a", floor: "#2a1414",
     archerArea: [1, 1, 17, 13], archerNews: "An archer is hiding behind a rock! Go get him",
+    story: [
+      "This is it. The Dragon's Lair.",
+      "The last of the king's gold is here.",
+      "Get every coin and bring it home!"
+    ],
     rows: [
       "###################",
       "#........#........#",
@@ -272,6 +304,7 @@ const MAPS = [
     ] }
 ];
 const COLS = 19, ROWS = 15, TILE = 32;
+const TOP = TILE;      // the message strip above the map. It is one square tall
 const KNIGHT_START = { x: 1, y: 13 };
 const DRAGON_STARTS = [{ x: 17, y: 1 }, { x: 17, y: 13 }];  // first dragon, second dragon
 const OGRE_STARTS = [{ x: 5, y: 1 }, { x: 11, y: 5 }];      // first ogre, second ogre
@@ -288,14 +321,16 @@ const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 
 let map = MAPS[0];     // the map of the level you are on
-let state = "title";   // title, play, hit, level, won, over
+let state = "title";   // title, story, play, hit, level, won, over
 let stateTimer = 0;
+let storyTimer = 0;    // how long the story screen has been showing
 let hitBy = "";
 let score, lives, level, coins, knight, monsters = [];
 let shield, shieldBroken, shieldKey = false;
 let swingTimer, swordRest;
 let held = [];         // arrow keys being held down, newest last
 let archers = [];      // the archers in your train. The first one walks right behind the knight
+let lostArchers = 0;   // archers that got hit. They come back when the knight loses a life
 let trail = [];        // the squares the knight just walked on, newest first. The train walks on these
 let waitingArcher = null;   // an archer hiding in the forest, waiting for the knight to come get him
 let archerCame = false;     // has this level's archer shown up yet?
@@ -329,6 +364,7 @@ function newGame() {
   score = 0;
   lives = START_LIVES;
   archers = [];
+  lostArchers = 0;
   startLevel(1);
 }
 
@@ -345,8 +381,17 @@ function startLevel(n) {
   waitingArcher = null;
   archerCame = false;
   resetPositions();
+  // the story screen comes first. The level starts when you press a button
+  state = "story";
+  storyTimer = 0;
+  notice = "";
+  noticeTimer = 0;
+}
+
+// A button skips the story screen and starts the level.
+function skipStory() {
+  if (storyTimer < STORY_WAIT) return;
   state = "play";
-  say("Level " + n + ": " + map.name);
 }
 
 function makeArcher() {
@@ -399,6 +444,7 @@ function releaseArrow(key) {
   held = held.filter(function (k) { return k !== key; });
 }
 function swingSword() {
+  if (state === "story") { skipStory(); return; }
   if (state === "play" && swordRest <= 0 && !isShielding()) {
     swingTimer = SWORD_SWING_TIME;
     swordRest = SWORD_REST_TIME;
@@ -406,9 +452,12 @@ function swingSword() {
 }
 function pressStart() {
   if (state === "title" || state === "won" || state === "over") newGame();
+  else if (state === "story") skipStory();
 }
 
 window.addEventListener("keydown", function (e) {
+  // holding a key down does not skip the story. You have to press it
+  if (e.repeat && state === "story") { e.preventDefault(); return; }
   if (DIRS[e.key]) {
     e.preventDefault();
     pressArrow(e.key);
@@ -604,15 +653,35 @@ function clearLine(ax, ay, bx, by) {
   return true;
 }
 
+// Up close, the dragon sees all the way around: the 8 squares that touch its square.
+// So you can't stand right behind it without it knowing.
+function dragonSeesClose(ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay;
+  if (Math.max(Math.abs(dx), Math.abs(dy)) > DRAGON_CLOSE_SIGHT) return false;
+  if (!clearLine(ax, ay, bx, by)) return false;
+  // on a corner square, a wall on both sides of the corner hides the knight
+  if (Math.abs(dx) === 1 && Math.abs(dy) === 1) return isOpen(ax + dx, ay) || isOpen(ax, ay + dy);
+  return true;
+}
+
 // Can this monster see the knight's square?
-// Dragon: only the way its two eyes point, in a straight line, as far as it goes.
+// Dragon: the way its two eyes point, in a straight line, as far as it goes.
+//         It also sees the squares right next to it, all the way around.
 // Ogre: all the way around, but only OGRE_SIGHT squares away.
 function canSee(m, bx, by) {
-  const ax = Math.round(m.px), ay = Math.round(m.py), f = m.facing;
+  const ax = Math.round(m.px), ay = Math.round(m.py);
   if (ax === bx && ay === by) return true;
   if (m.kind === "ogre") {
     return Math.hypot(bx - ax, by - ay) <= OGRE_SIGHT && clearLine(ax, ay, bx, by);
   }
+  return dragonSeesClose(ax, ay, bx, by) || seesAhead(m, bx, by);
+}
+
+// Is this square straight ahead of the monster, the way its eyes point, with no wall in between?
+// The dragon's fire only goes this way.
+function seesAhead(m, bx, by) {
+  const ax = Math.round(m.px), ay = Math.round(m.py), f = m.facing;
+  if (ax === bx && ay === by) return true;
   if (f.dx !== 0 && (by !== ay || Math.sign(bx - ax) !== f.dx)) return false;
   if (f.dy !== 0 && (bx !== ax || Math.sign(by - ay) !== f.dy)) return false;
   for (let x = Math.min(ax, bx); x <= Math.max(ax, bx); x++)
@@ -639,7 +708,7 @@ function inAttackRange(m) {
     m.facing = DIR_LIST.find(function (d) { return d.dx === dir.dx && d.dy === dir.dy; });
     return true;
   }
-  return canSee(m, kx, ky);
+  return seesAhead(m, kx, ky);
 }
 
 // Finds the first step of the shortest path from one square to another.
@@ -902,13 +971,23 @@ function archerIsHit(a) {
 }
 
 // Archers that get hit are gone. The knight keeps his life.
+// We count them, because they come back when the knight loses a life.
 function loseHitArchers() {
   const before = archers.length;
   archers = archers.filter(function (a) { return !archerIsHit(a); });
   if (archers.length < before) {
+    lostArchers += before - archers.length;
     placeArchers();
     say("You lost an archer!");
   }
+}
+
+// When the knight comes back to life, every archer you lost comes back with him.
+function archersComeBack() {
+  const n = lostArchers;
+  for (let i = 0; i < n; i++) archers.push(makeArcher());
+  lostArchers = 0;
+  return n;
 }
 
 // An archer shoots the closest monster he can see within ARROW_RANGE squares.
@@ -1016,7 +1095,17 @@ function loseLife(why) {
 function update(dt) {
   if (state === "hit") {
     stateTimer -= dt;
-    if (stateTimer <= 0) { resetPositions(); state = "play"; }
+    if (stateTimer <= 0) {
+      const back = archersComeBack();
+      resetPositions();
+      state = "play";
+      if (back === 1) say("Your archer came back to life!");
+      if (back > 1) say("Your " + back + " archers came back to life!");
+    }
+    return;
+  }
+  if (state === "story") {
+    storyTimer += dt;
     return;
   }
   if (state === "level") {
@@ -1231,10 +1320,111 @@ function drawArcher(px, py) {
   ctx.fillRect(px * TILE + 9, py * TILE + 14, 14, 4);
 }
 
+// Who is in this level, for the story screen. A monster that was not in the level before is marked new.
+function storyCast(lv) {
+  const plan = LEVELS[lv - 1], before = lv > 1 ? LEVELS[lv - 2] : plan;
+  const cast = [];
+  [["dragon", "dragons", "dragon"], ["ogre", "ogres", "ogre"], ["flyer", "flyers", "flying dragon"]].forEach(function (k) {
+    for (let i = 0; i < plan[k[1]]; i++) cast.push({ kind: k[0], label: k[2], isNew: i >= before[k[1]] });
+  });
+  return cast;
+}
+
+// ---------- THE STORY SCREEN ----------
+// It shows before every level. The story lines show up one at a time.
+// The words are in the MAPS list at the top, in "story".
+function drawStory() {
+  const mid = canvas.width / 2;
+  ctx.fillStyle = "#0b0b12";
+  ctx.fillRect(0, -TOP, canvas.width, canvas.height);
+  ctx.strokeStyle = map.wall;
+  ctx.lineWidth = 4;
+  ctx.strokeRect(10, -TOP + 10, canvas.width - 20, canvas.height - 20);
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#fff";
+  ctx.font = "bold 40px Courier New";
+  ctx.fillText("LEVEL " + level, mid, 40);
+  ctx.fillStyle = "#fde047";
+  ctx.font = "bold 22px Courier New";
+  ctx.fillText(map.name, mid, 75);
+
+  // the story, one line at a time
+  const lines = map.story || [];
+  const shown = Math.min(lines.length, Math.floor(storyTimer / STORY_LINE_TIME) + 1);
+  ctx.fillStyle = "#e5e7eb";
+  ctx.font = "17px Courier New";
+  for (let i = 0; i < shown; i++) ctx.fillText(lines[i], mid, 130 + i * 30);
+
+  // after the story: who is waiting for you in this level
+  if (storyTimer >= lines.length * STORY_LINE_TIME) {
+    ctx.fillStyle = "#9ca3af";
+    ctx.font = "14px Courier New";
+    ctx.fillText("Waiting for you:", mid, 240);
+    const cast = storyCast(level), gap = 3.2;
+    cast.forEach(function (c, i) {
+      const px = (COLS - 1) / 2 + (i - (cast.length - 1) / 2) * gap, py = 8.1;
+      const m = makeMonster(c.kind, { x: px, y: py });
+      m.facing = c.kind === "ogre" ? DIRS.ArrowRight : DIRS.ArrowDown;
+      m.vx = 1;
+      if (c.kind === "dragon") drawDragon(m);
+      if (c.kind === "ogre") drawOgre(m);
+      if (c.kind === "flyer") drawFlyer(m);
+      ctx.textAlign = "center";
+      ctx.fillStyle = "#e5e7eb";
+      ctx.font = "12px Courier New";
+      ctx.fillText(c.label, px * TILE + TILE / 2, py * TILE + TILE + 16);
+      if (c.isNew && level > 1) {
+        ctx.fillStyle = "#fde047";
+        ctx.font = "bold 13px Courier New";
+        ctx.fillText("NEW!", px * TILE + TILE / 2, py * TILE + TILE + 32);
+      }
+    });
+    ctx.fillStyle = "#fde047";
+    ctx.font = "bold 16px Courier New";
+    ctx.fillText(LEVELS[level - 1].news, mid, 375);
+  }
+
+  // the skip button
+  ctx.fillStyle = Math.floor(Date.now() / 500) % 2 ? "#fff" : "#9ca3af";
+  ctx.font = "18px Courier New";
+  ctx.fillText(TOUCH ? "Tap here to start the level" : "Press ENTER or SPACE to start the level", mid, 440);
+}
+
+function drawHud() {
+  document.getElementById("score").textContent = state === "title" ? 0 : score;
+  document.getElementById("level").textContent = state === "title" ? 1 : level;
+  document.getElementById("lives").textContent = state === "title" ? START_LIVES : lives;
+  document.getElementById("coinsLeft").textContent = state === "title" ? "-" : coins.size;
+  const bar = document.getElementById("shieldBar");
+  bar.style.width = (state === "title" ? 100 : Math.round(shield * 100)) + "%";
+  bar.style.background = shieldBroken ? "#666" : "#22d3ee";
+}
+
 function draw() {
+  // The map is drawn one square down, so the message strip sits above the top wall.
+  ctx.setTransform(1, 0, 0, 1, 0, TOP);
+  if (state === "story") {
+    drawStory();
+    drawHud();
+    return;
+  }
+
+  // The message strip. A yellow message shows here for a few seconds.
+  // The rest of the time it shows the name of the place.
+  ctx.fillStyle = "#111";
+  ctx.fillRect(0, -TOP, canvas.width, TOP);
+  if (state !== "title") {
+    const talking = noticeTimer > 0 && state === "play";
+    ctx.fillStyle = talking ? "#fde047" : "#9ca3af";
+    ctx.textAlign = "center";
+    ctx.font = talking ? "bold 17px Courier New" : "15px Courier New";
+    ctx.fillText(talking ? notice : "Level " + level + ": " + map.name, canvas.width / 2, -TOP + 22);
+  }
+
   // every place has its own floor color and wall color
   ctx.fillStyle = map.floor;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillRect(0, 0, canvas.width, ROWS * TILE);
   for (let y = 0; y < ROWS; y++) {
     for (let x = 0; x < COLS; x++) {
       if (map.rows[y][x] === "#") {
@@ -1307,15 +1497,6 @@ function draw() {
     // flying dragons go on top of everything, because they are up in the air
     monsters.forEach(function (m) { if (m.kind === "flyer") drawFlyer(m); });
 
-    // a short message at the top, over the top wall
-    if (noticeTimer > 0 && state === "play") {
-      ctx.fillStyle = "rgba(0,0,0,0.8)";
-      ctx.fillRect(0, 0, canvas.width, TILE);
-      ctx.fillStyle = "#fde047";
-      ctx.textAlign = "center";
-      ctx.font = "bold 17px Courier New";
-      ctx.fillText(notice, canvas.width / 2, 22);
-    }
   }
 
   const go = TOUCH ? "Tap here" : "ENTER";
@@ -1324,20 +1505,11 @@ function draw() {
     underBanner("version " + VERSION);
   }
   if (state === "hit") banner("OUCH!", hitBy);
-  if (state === "level") {
-    banner("LEVEL " + (level + 1), MAPS[level % MAPS.length].name);
-    underBanner(LEVELS[level].news);
-  }
+  if (state === "level") banner("LEVEL " + level + " DONE!", "Score " + score);
   if (state === "won") banner("YOU WIN!", "All " + MAX_LEVEL + " levels! Score " + score + ". " + go + " to play again");
   if (state === "over") banner("GAME OVER", "Level " + level + ", score " + score + ". " + go + " to try again");
 
-  document.getElementById("score").textContent = state === "title" ? 0 : score;
-  document.getElementById("level").textContent = state === "title" ? 1 : level;
-  document.getElementById("lives").textContent = state === "title" ? START_LIVES : lives;
-  document.getElementById("coinsLeft").textContent = state === "title" ? "-" : coins.size;
-  const bar = document.getElementById("shieldBar");
-  bar.style.width = (state === "title" ? 100 : Math.round(shield * 100)) + "%";
-  bar.style.background = shieldBroken ? "#666" : "#22d3ee";
+  drawHud();
 }
 
 // ---------- THE GAME LOOP ----------

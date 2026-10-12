@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>The Knight Man (v7)</title>
+<title>The Knight Man (v8)</title>
 <style>
   body { margin: 0; background: #111; color: #eee; font-family: "Courier New", monospace;
          display: flex; flex-direction: column; align-items: center; }
@@ -85,12 +85,13 @@
   <span class="keyHelp">ARROW KEYS: move &nbsp;|&nbsp; SPACE: swing sword &nbsp;|&nbsp; hold S: shield &nbsp;|&nbsp; ENTER: start<br>
   The shield only covers the side you face. Fire and clubs stop at it. Hold S and tap an arrow to turn it.<br>
   Collect most of the coins and an archer shows up. Stand next to him and he joins you. Every level is a new place.<br>
-  A story screen shows before every level. Press ENTER or SPACE to skip it.</span>
-  <span class="touchHelp">Tap the game to start. Drag the stick to move. Hold SHIELD and push the stick to turn your shield. Collect most of the coins and an archer shows up. Every level is a new place. Tap the story screen to skip it.</span>
+  A story screen shows before every level. Press ENTER or SPACE to skip it.<br>
+  Win or lose, you can put your name on the TOP KNIGHTS list. Press L on the title screen to see it.</span>
+  <span class="touchHelp">Tap the game to start. Drag the stick to move. Hold SHIELD and push the stick to turn your shield. Collect most of the coins and an archer shows up. Every level is a new place. Tap the story screen to skip it. Win or lose, you can put your name on the TOP KNIGHTS list.</span>
 </div>
 
 <script>
-const VERSION = 7;                // shows on the title screen, so you know which game loaded
+const VERSION = 8;                // shows on the title screen, so you know which game loaded
 
 // =====================================================
 // NUMBERS YOU CAN CHANGE (this is called "tuning")
@@ -165,6 +166,23 @@ const LEVEL_BANNER_TIME = 1.5;    // seconds the "LEVEL 1 DONE!" sign shows
 // The story screen (it shows before every level)
 const STORY_LINE_TIME = 1;        // seconds between one story line and the next
 const STORY_WAIT = 0.4;           // seconds before a button can skip the story, so you don't skip it by mistake
+const SCENE_LOOP_TIME = 8;        // seconds before the moving picture on a story screen starts over
+
+// The opening movie (it plays when you start a game from the title screen)
+// You can change the words. Keep each line shorter than 50 letters.
+const MOVIE_WORDS = [
+  "Long ago, the king kept his gold in the castle.",
+  "One night, a dragon flew in.",
+  "It grabbed the gold and flew away!",
+  "Only one knight was brave enough to get it back."
+];
+const MOVIE_PART_TIME = 4;        // seconds each part of the movie lasts. Every line of words is one part
+const MOVIE_END_WAIT = 1.5;       // seconds the last picture stays before the story screen comes
+
+// The TOP KNIGHTS list (the leaderboard). It is saved on this iPad or computer.
+const BOARD_SIZE = 10;            // how many names the list keeps
+const NAME_LETTERS = 4;           // how many letters are in a name
+const SCREEN_WAIT = 0.5;          // seconds before a button works on a new screen, so you don't skip it by mistake
 
 // =====================================================
 // THE MAPS (a new place for every level)
@@ -338,6 +356,16 @@ let totalCoins = 0;         // how many coins the level started with
 let arrows = [];            // arrows flying right now
 let notice = "", noticeTimer = 0;   // a short message at the top of the game
 const TRAIL_KEEP = 12;      // how many squares of the knight's path we remember
+let screenTimer = 0;        // how long the screen you are looking at has been showing
+let movieTimer = 0;         // how long the opening movie has been playing
+let playTime = 0;           // seconds you have been playing this game. Story screens don't count
+let board = [];             // the TOP KNIGHTS list, best game first
+let myEntry = null;         // the game you just played, ready to go on the list
+let myRank = 0;             // where that game lands on the list. 1 is the top
+let boardFrom = "game";     // how you got to the list: from the "title" screen, or after a "game"
+let nameChars = [];         // the letters of the name you are putting in
+let nameSlot = 0;           // which letter you are changing
+let nameRepeat = 0;         // hold the stick or an arrow key and the letters keep turning
 
 function isOpen(x, y) {
   return y >= 0 && y < ROWS && x >= 0 && x < COLS && map.rows[y][x] !== "#";
@@ -360,12 +388,20 @@ function fireRest(lv) {
   return FIRE_REST_START - (FIRE_REST_START - FIRE_REST_LAST_LEVEL) * (lv - 1) / (MAX_LEVEL - 1);
 }
 
-function newGame() {
+// A game that starts from the title screen plays the opening movie first.
+// "Play again" skips the movie and goes right to the story screen.
+function newGame(withMovie) {
   score = 0;
   lives = START_LIVES;
+  playTime = 0;
   archers = [];
   lostArchers = 0;
+  myEntry = null;
   startLevel(1);
+  if (withMovie) {
+    state = "movie";
+    movieTimer = 0;
+  }
 }
 
 function startLevel(n) {
@@ -392,6 +428,22 @@ function startLevel(n) {
 function skipStory() {
   if (storyTimer < STORY_WAIT) return;
   state = "play";
+}
+
+// A button skips the opening movie. When the movie is over, the level 1 story screen comes.
+function skipMovie() {
+  if (movieTimer < SCREEN_WAIT) return;
+  endMovie();
+}
+function endMovie() {
+  state = "story";
+  storyTimer = 0;
+}
+
+// Go to a new screen, and start counting how long it has been showing.
+function goTo(screen) {
+  state = screen;
+  screenTimer = 0;
 }
 
 function makeArcher() {
@@ -439,25 +491,38 @@ function resetPositions() {
 function pressArrow(key) {
   if (!held.includes(key)) held.push(key);
   if (state === "play") knight.facing = DIRS[key];
+  if (state === "name") { nameArrow(key); nameRepeat = 0.4; }
 }
 function releaseArrow(key) {
   held = held.filter(function (k) { return k !== key; });
 }
 function swingSword() {
   if (state === "story") { skipStory(); return; }
+  if (state === "movie") { skipMovie(); return; }
+  if (state === "name") { nameDone(); return; }
+  if (state === "board") { leaveBoard(); return; }
   if (state === "play" && swordRest <= 0 && !isShielding()) {
     swingTimer = SWORD_SWING_TIME;
     swordRest = SWORD_REST_TIME;
   }
 }
 function pressStart() {
-  if (state === "title" || state === "won" || state === "over") newGame();
+  if (state === "title") newGame(true);
+  else if (state === "won" || state === "over") afterGame();
   else if (state === "story") skipStory();
+  else if (state === "movie") skipMovie();
+  else if (state === "name") nameDone();
+  else if (state === "board") leaveBoard();
 }
 
 window.addEventListener("keydown", function (e) {
-  // holding a key down does not skip the story. You have to press it
-  if (e.repeat && state === "story") { e.preventDefault(); return; }
+  // holding a key down does not skip a screen. You have to press it
+  if (e.repeat && state !== "play") {
+    if (DIRS[e.key] || e.key === " ") e.preventDefault();
+    return;
+  }
+  // on the name screen you can type your name
+  if (state === "name" && nameKey(e)) { e.preventDefault(); return; }
   if (DIRS[e.key]) {
     e.preventDefault();
     pressArrow(e.key);
@@ -468,6 +533,8 @@ window.addEventListener("keydown", function (e) {
     shieldKey = true;
   } else if (e.key === "Enter") {
     pressStart();
+  } else if ((e.key === "l" || e.key === "L") && state === "title") {
+    showBoard("title");
   }
 });
 window.addEventListener("keyup", function (e) {
@@ -546,7 +613,17 @@ shieldBtn.addEventListener("pointerdown", function (e) {
   swordBtn.addEventListener(name, function () { swordBtn.classList.remove("on"); });
   shieldBtn.addEventListener(name, function () { shieldBtn.classList.remove("on"); shieldKey = false; });
 });
-canvas.addEventListener("pointerdown", function (e) { e.preventDefault(); pressStart(); });
+// A tap (or a mouse click) on the game. Most of the time it means "go on".
+// On the title screen and the name screen there are buttons you can tap.
+canvas.addEventListener("pointerdown", function (e) {
+  e.preventDefault();
+  const box = canvas.getBoundingClientRect();
+  const x = (e.clientX - box.left) / box.width * canvas.width;
+  const y = (e.clientY - box.top) / box.height * canvas.height - TOP;
+  if (state === "title" && inBox(x, y, BOARD_BUTTON)) showBoard("title");
+  else if (state === "name") nameTap(x, y);
+  else pressStart();
+});
 // stop the long-press menu from popping up on the buttons
 document.addEventListener("contextmenu", function (e) { if (TOUCH) e.preventDefault(); });
 
@@ -616,7 +693,7 @@ function knightArrives() {
     score += COIN_POINTS;
     if (coins.size === 0) {
       if (level >= MAX_LEVEL) {
-        state = "won";
+        goTo("won");
       } else {
         state = "level";
         stateTimer = LEVEL_BANNER_TIME;
@@ -1084,7 +1161,7 @@ function loseLife(why) {
   hitBy = why;
   lives -= 1;
   if (lives <= 0) {
-    state = "over";
+    goTo("over");
   } else {
     state = "hit";
     stateTimer = 1.2;
@@ -1093,6 +1170,20 @@ function loseLife(why) {
 
 // ---------- ONE STEP OF THE GAME ----------
 function update(dt) {
+  screenTimer += dt;
+  if (state === "movie") {
+    movieTimer += dt;
+    if (movieTimer >= MOVIE_WORDS.length * MOVIE_PART_TIME + MOVIE_END_WAIT) endMovie();
+    return;
+  }
+  if (state === "name") {
+    // hold the stick or an arrow key and the letters keep turning
+    if (held.length) {
+      nameRepeat -= dt;
+      if (nameRepeat <= 0) { nameArrow(held[held.length - 1]); nameRepeat = 0.15; }
+    }
+    return;
+  }
   if (state === "hit") {
     stateTimer -= dt;
     if (stateTimer <= 0) {
@@ -1114,6 +1205,7 @@ function update(dt) {
     return;
   }
   if (state !== "play") return;
+  playTime += dt;
 
   // shield power drains while you hold S, and fills back up when you let go
   if (isShielding()) {
@@ -1313,6 +1405,12 @@ function stoppedBy(holder) {
   return monsters.filter(function (m) { return m.attackTimer > 0 && attackStoppedBy(m) === holder; });
 }
 
+// The knight: a blue square with a light patch on the side he is facing.
+function drawKnight(px, py, facing) {
+  square(px, py, 24, "#3b82f6");
+  square(px + facing.dx * 0.25, py + facing.dy * 0.25, 8, "#bfdbfe");
+}
+
 // An archer: a small light-blue square with a brown bow.
 function drawArcher(px, py) {
   square(px, py, 18, "#93c5fd");
@@ -1343,27 +1441,31 @@ function drawStory() {
 
   ctx.textAlign = "center";
   ctx.fillStyle = "#fff";
-  ctx.font = "bold 40px Courier New";
-  ctx.fillText("LEVEL " + level, mid, 40);
+  ctx.font = "bold 34px Courier New";
+  ctx.fillText("LEVEL " + level, mid, 24);
   ctx.fillStyle = "#fde047";
-  ctx.font = "bold 22px Courier New";
-  ctx.fillText(map.name, mid, 75);
+  ctx.font = "bold 20px Courier New";
+  ctx.fillText(map.name, mid, 52);
+
+  // the moving picture for this place
+  drawScene(storyTimer);
+  ctx.textAlign = "center";
 
   // the story, one line at a time
   const lines = map.story || [];
   const shown = Math.min(lines.length, Math.floor(storyTimer / STORY_LINE_TIME) + 1);
   ctx.fillStyle = "#e5e7eb";
   ctx.font = "17px Courier New";
-  for (let i = 0; i < shown; i++) ctx.fillText(lines[i], mid, 130 + i * 30);
+  for (let i = 0; i < shown; i++) ctx.fillText(lines[i], mid, 198 + i * 26);
 
   // after the story: who is waiting for you in this level
   if (storyTimer >= lines.length * STORY_LINE_TIME) {
     ctx.fillStyle = "#9ca3af";
     ctx.font = "14px Courier New";
-    ctx.fillText("Waiting for you:", mid, 240);
+    ctx.fillText("Waiting for you:", mid, 284);
     const cast = storyCast(level), gap = 3.2;
     cast.forEach(function (c, i) {
-      const px = (COLS - 1) / 2 + (i - (cast.length - 1) / 2) * gap, py = 8.1;
+      const px = (COLS - 1) / 2 + (i - (cast.length - 1) / 2) * gap, py = 9.1;
       const m = makeMonster(c.kind, { x: px, y: py });
       m.facing = c.kind === "ogre" ? DIRS.ArrowRight : DIRS.ArrowDown;
       m.vx = 1;
@@ -1382,30 +1484,585 @@ function drawStory() {
     });
     ctx.fillStyle = "#fde047";
     ctx.font = "bold 16px Courier New";
-    ctx.fillText(LEVELS[level - 1].news, mid, 375);
+    ctx.fillText(LEVELS[level - 1].news, mid, 392);
   }
 
   // the skip button
   ctx.fillStyle = Math.floor(Date.now() / 500) % 2 ? "#fff" : "#9ca3af";
   ctx.font = "18px Courier New";
-  ctx.fillText(TOUCH ? "Tap here to start the level" : "Press ENTER or SPACE to start the level", mid, 440);
+  ctx.fillText(TOUCH ? "Tap here to start the level" : "Press ENTER or SPACE to start the level", mid, 444);
+}
+
+// =====================================================
+// THE TOP KNIGHTS LIST (the leaderboard)
+// The list is saved on this iPad or computer, so it is still there the next time you play.
+// Another iPad or computer has its own list.
+// =====================================================
+const BOARD_KEY = "knightMan.topKnights";   // where the list is saved
+const NAME_KEY = "knightMan.lastName";      // the last name you put in, so you don't have to do it again
+const NAME_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ ";
+
+// A filled box. x and y are dots on the screen, not squares of the map.
+function block(x, y, w, h, color) {
+  ctx.fillStyle = color;
+  ctx.fillRect(x, y, w, h);
+}
+function inBox(x, y, b) {
+  return x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
+}
+
+// Turns seconds into a clock, like 4:07.
+function clock(seconds) {
+  const whole = Math.floor(seconds);
+  return Math.floor(whole / 60) + ":" + String(whole % 60).padStart(2, "0");
+}
+function livesWords(n) {
+  return n === 1 ? "1 life" : n + " lives";
+}
+
+// Which of two games goes higher on the list?
+// 1. A game that beat the last level goes above a game that did not.
+// 2. Two winners: the faster time goes first. Same time: more lives left goes first.
+// 3. Two games that did not win: more points goes first. Same points: the faster time goes first.
+function betterRun(a, b) {
+  if (a.won !== b.won) return a.won ? -1 : 1;
+  if (a.won) return (a.time - b.time) || (b.lives - a.lives);
+  return (b.score - a.score) || (a.time - b.time);
+}
+
+function loadBoard() {
+  board = [];
+  try {
+    const saved = JSON.parse(localStorage.getItem(BOARD_KEY) || "[]");
+    if (Array.isArray(saved)) {
+      board = saved.filter(function (e) {
+        return e && typeof e.name === "string" && typeof e.score === "number" && typeof e.time === "number";
+      });
+    }
+  } catch (err) { board = []; }
+  board.sort(betterRun);
+}
+function saveBoard() {
+  try { localStorage.setItem(BOARD_KEY, JSON.stringify(board)); } catch (err) { /* the list just won't be saved */ }
+}
+
+// The game is over, won or lost. See where this game lands on the list.
+// If it makes the list, you get to put in your name.
+function afterGame() {
+  if (screenTimer < SCREEN_WAIT) return;
+  loadBoard();
+  myEntry = { name: "", score: score, won: state === "won", time: Math.floor(playTime), lives: lives, level: level };
+  // a game that ties with one already on the list goes below it
+  myRank = board.filter(function (e) { return betterRun(e, myEntry) <= 0; }).length + 1;
+  if (myRank > BOARD_SIZE || (score === 0 && !myEntry.won)) {
+    myRank = 0;
+    showBoard("game");
+    return;
+  }
+  let last = "";
+  try { last = localStorage.getItem(NAME_KEY) || ""; } catch (err) { last = ""; }
+  nameChars = [];
+  for (let i = 0; i < NAME_LETTERS; i++) {
+    const c = last.charAt(i);
+    nameChars.push(c && NAME_CHARS.includes(c) ? c : (last ? " " : "A"));
+  }
+  nameSlot = 0;
+  held = [];          // an arrow you were still holding does not turn the letters
+  goTo("name");
+}
+
+// Turn the letter you are on. 1 goes A, B, C. -1 goes back.
+function nameTurn(step) {
+  const n = NAME_CHARS.length;
+  nameChars[nameSlot] = NAME_CHARS[(NAME_CHARS.indexOf(nameChars[nameSlot]) + step + n) % n];
+}
+// The stick or the arrow keys: up and down turn the letter, left and right go to another letter.
+function nameArrow(key) {
+  if (key === "ArrowUp") nameTurn(1);
+  if (key === "ArrowDown") nameTurn(-1);
+  if (key === "ArrowLeft") nameSlot = Math.max(0, nameSlot - 1);
+  if (key === "ArrowRight") nameSlot = Math.min(NAME_LETTERS - 1, nameSlot + 1);
+}
+// On a keyboard you can just type the letters. Backspace rubs one out.
+function nameKey(e) {
+  if (e.metaKey || e.ctrlKey || e.altKey) return false;
+  if (/^[a-zA-Z]$/.test(e.key)) {
+    nameChars[nameSlot] = e.key.toUpperCase();
+    nameSlot = Math.min(NAME_LETTERS - 1, nameSlot + 1);
+    return true;
+  }
+  if (e.key === "Backspace") {
+    if (nameChars[nameSlot] === " ") nameSlot = Math.max(0, nameSlot - 1);
+    nameChars[nameSlot] = " ";
+    return true;
+  }
+  return false;
+}
+// Where the letter boxes are on the name screen.
+function nameBoxes() {
+  const size = 64, gap = 16;
+  return { x: (canvas.width - NAME_LETTERS * size - (NAME_LETTERS - 1) * gap) / 2, y: 176, size: size, gap: gap };
+}
+const DONE_BUTTON = { x: 224, y: 304, w: 160, h: 46 };    // on the name screen
+const BOARD_BUTTON = { x: 194, y: 346, w: 220, h: 42 };   // on the title screen
+// A tap on the name screen: on a letter, on the little arrow above or below it, or on DONE.
+function nameTap(x, y) {
+  if (inBox(x, y, DONE_BUTTON)) { nameDone(); return; }
+  const B = nameBoxes();
+  for (let i = 0; i < NAME_LETTERS; i++) {
+    const left = B.x + i * (B.size + B.gap);
+    if (x < left - B.gap / 2 || x > left + B.size + B.gap / 2) continue;
+    if (y < B.y - 40 || y > B.y + B.size + 40) continue;
+    nameSlot = i;
+    if (y < B.y) nameTurn(1);
+    if (y > B.y + B.size) nameTurn(-1);
+  }
+}
+// Your name is right. Put this game on the list and save the list.
+function nameDone() {
+  if (screenTimer < SCREEN_WAIT) return;
+  const name = nameChars.join("").replace(/ +$/, "") || "????";
+  try { localStorage.setItem(NAME_KEY, name); } catch (err) { /* it just won't be remembered */ }
+  myEntry.name = name;
+  board.push(myEntry);
+  board.sort(betterRun);
+  board.length = Math.min(board.length, BOARD_SIZE);
+  saveBoard();
+  myRank = board.indexOf(myEntry) + 1;
+  showBoard("game");
+}
+
+function showBoard(from) {
+  if (from === "title") { loadBoard(); myEntry = null; myRank = 0; }
+  boardFrom = from;
+  goTo("board");
+}
+// From the title screen, the list goes back to the title. After a game, it starts a new game.
+function leaveBoard() {
+  if (screenTimer < SCREEN_WAIT) return;
+  if (boardFrom === "title") goTo("title");
+  else newGame(false);
+}
+
+// What happened in a game, in words.
+function runWords(e) {
+  if (e.won) return "All " + MAX_LEVEL + " levels in " + clock(e.time) + ", with " + livesWords(e.lives) + " left";
+  return "Level " + e.level + ", " + e.score + " points, time " + clock(e.time);
+}
+
+// A dark screen with a frame around it, like the story screen.
+function darkScreen(frame) {
+  block(0, -TOP, canvas.width, canvas.height, "#0b0b12");
+  ctx.strokeStyle = frame;
+  ctx.lineWidth = 4;
+  ctx.strokeRect(10, -TOP + 10, canvas.width - 20, canvas.height - 20);
+  ctx.textAlign = "center";
+}
+
+// ---------- THE NAME SCREEN ----------
+function drawName() {
+  const mid = canvas.width / 2, B = nameBoxes();
+  darkScreen("#fde047");
+  ctx.fillStyle = "#fff";
+  ctx.font = "bold 36px Courier New";
+  ctx.fillText(myEntry.won ? "YOU WIN!" : "GAME OVER", mid, 24);
+  ctx.fillStyle = "#d1d5db";
+  ctx.font = "16px Courier New";
+  ctx.fillText(runWords(myEntry), mid, 54);
+  ctx.fillStyle = "#fde047";
+  ctx.font = "bold 17px Courier New";
+  ctx.fillText("You are number " + myRank + " on the TOP KNIGHTS list!", mid, 92);
+  ctx.fillStyle = "#e5e7eb";
+  ctx.font = "17px Courier New";
+  ctx.fillText("Put in your name:", mid, 126);
+
+  for (let i = 0; i < NAME_LETTERS; i++) {
+    const x = B.x + i * (B.size + B.gap), on = i === nameSlot;
+    block(x, B.y, B.size, B.size, on ? "#1e3a8a" : "#1f2937");
+    ctx.strokeStyle = on ? "#fde047" : "#6b7280";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(x, B.y, B.size, B.size);
+    ctx.fillStyle = "#fff";
+    ctx.font = "bold 44px Courier New";
+    ctx.fillText(nameChars[i] === " " ? "_" : nameChars[i], x + B.size / 2, B.y + 47);
+    // the little arrows above and below the letter
+    ctx.fillStyle = on ? "#fde047" : "#6b7280";
+    ctx.font = "20px Courier New";
+    ctx.fillText("▲", x + B.size / 2, B.y - 10);
+    ctx.fillText("▼", x + B.size / 2, B.y + B.size + 26);
+  }
+
+  const d = DONE_BUTTON;
+  block(d.x, d.y, d.w, d.h, Math.floor(Date.now() / 500) % 2 ? "#fde047" : "#facc15");
+  ctx.fillStyle = "#111";
+  ctx.font = "bold 24px Courier New";
+  ctx.fillText("DONE", mid, d.y + 31);
+
+  ctx.fillStyle = "#9ca3af";
+  ctx.font = "14px Courier New";
+  if (TOUCH) {
+    ctx.fillText("Tap the little arrows, or push the stick, to change a letter.", mid, 390);
+    ctx.fillText("Tap DONE or the SWORD button when your name is right.", mid, 412);
+  } else {
+    ctx.fillText("Type your name. Or use the arrow keys:", mid, 390);
+    ctx.fillText("UP and DOWN change the letter. LEFT and RIGHT move.", mid, 412);
+    ctx.fillText("Press ENTER when your name is right.", mid, 434);
+  }
+}
+
+// ---------- THE TOP KNIGHTS SCREEN ----------
+// One row of the list. The numbers line up on the right side of their column.
+function boardRow(y, cells) {
+  ctx.textAlign = "right"; ctx.fillText(cells[0], 96, y);
+  ctx.textAlign = "left";  ctx.fillText(cells[1], 116, y);
+  ctx.textAlign = "right"; ctx.fillText(cells[2], 282, y);
+  ctx.textAlign = "left";  ctx.fillText(cells[3], 306, y);
+  ctx.textAlign = "right"; ctx.fillText(cells[4], 458, y);
+  ctx.textAlign = "left";  ctx.fillText(cells[5], 482, y);
+}
+
+function drawBoard() {
+  const mid = canvas.width / 2;
+  darkScreen("#fde047");
+  ctx.fillStyle = "#fde047";
+  ctx.font = "bold 36px Courier New";
+  ctx.fillText("TOP KNIGHTS", mid, 22);
+  ctx.fillStyle = "#9ca3af";
+  ctx.font = "13px Courier New";
+  ctx.fillText("Winners go first: the fastest time, then the most lives left.", mid, 46);
+  ctx.fillText("After the winners: the most points.", mid, 62);
+
+  ctx.font = "14px Courier New";
+  boardRow(90, ["#", "NAME", "POINTS", "HOW FAR", "TIME", "LIVES LEFT"]);
+  board.forEach(function (e, i) {
+    const mine = e === myEntry, y = 118 + i * 28;
+    ctx.fillStyle = mine ? "#fde047" : "#e5e7eb";
+    ctx.font = (mine ? "bold " : "") + "18px Courier New";
+    boardRow(y, [String(i + 1), e.name, String(e.score), e.won ? "WON!" : "Level " + e.level,
+                 clock(e.time), e.won ? String(e.lives) : "-"]);
+    // a blinking mark shows which row is yours
+    if (mine && Math.floor(Date.now() / 400) % 2) { ctx.textAlign = "left"; ctx.fillText(">", 44, y); }
+  });
+
+  ctx.textAlign = "center";
+  if (!board.length) {
+    ctx.fillStyle = "#e5e7eb";
+    ctx.font = "17px Courier New";
+    ctx.fillText("No names yet. Play a game to get on the list!", mid, 200);
+  }
+  if (myEntry && board.indexOf(myEntry) < 0) {
+    ctx.fillStyle = "#fde047";
+    ctx.font = "15px Courier New";
+    ctx.fillText(myEntry.score > 0 ? "You got " + myEntry.score + " points. Not in the top " + BOARD_SIZE + " this time."
+                                   : "No points this time. Try again!", mid, 410);
+  }
+  ctx.fillStyle = Math.floor(Date.now() / 500) % 2 ? "#fff" : "#9ca3af";
+  ctx.font = "18px Courier New";
+  const what = boardFrom === "title" ? "go back" : "play again";
+  ctx.fillText(TOUCH ? "Tap here to " + what : "Press ENTER to " + what, mid, 444);
+}
+
+// =====================================================
+// MOVING PICTURES
+// The opening movie, and the small moving picture on every story screen.
+// They use the same squares as the game. When we draw real art, they get it too.
+// =====================================================
+
+// These draw a character with its top-left corner at a spot on the screen (dots, not squares of the map).
+function knightAt(x, y, dir) {
+  drawKnight(x / TILE, y / TILE, dir || DIRS.ArrowRight);
+}
+function monsterAt(kind, x, y, look) {
+  const m = makeMonster(kind, { x: x / TILE, y: y / TILE });
+  m.facing = DIRS.ArrowLeft;
+  m.vx = -1;
+  Object.assign(m, look || {});
+  if (kind === "dragon") drawDragon(m);
+  if (kind === "ogre") drawOgre(m);
+  if (kind === "flyer") drawFlyer(m);
+}
+// A pile of gold coins. rows is how tall it is.
+function goldPile(cx, baseY, rows, t) {
+  let n = 0;
+  for (let r = 0; r < rows; r++) {
+    const count = (rows - r) * 2 - 1;
+    for (let i = 0; i < count; i++) {
+      n++;
+      const twinkle = (n * 7 + Math.floor(t * 5)) % 17 === 0;
+      block(cx - count * 6 + i * 12, baseY - 12 * (r + 1), 11, 11, twinkle ? "#fff" : (n % 2 ? "#f5b921" : "#fde047"));
+    }
+  }
+}
+function tree(x, groundY, tall) {
+  block(x + 10, groundY - tall + 20, 10, tall - 20, "#78350f");
+  block(x, groundY - tall, 30, 26, "#166534");
+}
+
+// ---------- THE MOVING PICTURE ON A STORY SCREEN ----------
+// Each place has its own picture. The knight walks in and picks up coins.
+// Then a monster of that level shows what it does, and the knight shows how to stop it.
+const SCENE_BOX = { x: 104, y: 66, w: 400, h: 104 };
+
+// What is behind the knight and the monsters in each place.
+function drawBackdrop(t, P, gy) {
+  const floorY = gy + 32;
+  if (level === 1) {
+    // the castle, and two trees on the grounds
+    block(P.x + 8, P.y + 30, 96, floorY - P.y - 30, "#6b7280");
+    for (let i = 0; i < 4; i++) block(P.x + 8 + i * 28, P.y + 20, 12, 10, "#6b7280");
+    block(P.x + 44, gy + 2, 24, 30, "#111");
+    block(P.x + 22, P.y + 44, 8, 12, "#fde047");
+    block(P.x + 82, P.y + 44, 8, 12, "#fde047");
+    tree(P.x + 320, floorY, 62);
+    tree(P.x + 364, floorY, 78);
+  } else if (level === 2) {
+    // lots of trees
+    [6, 70, 150, 215, 290, 352].forEach(function (x, i) { tree(P.x + x, floorY, i % 2 ? 84 : 64); });
+  } else if (level === 3) {
+    // pillars, and a fountain in the middle
+    [28, 118, 268, 358].forEach(function (x) {
+      block(P.x + x, P.y + 26, 14, floorY - P.y - 26, map.wall);
+      block(P.x + x - 4, P.y + 22, 22, 6, map.wall);
+    });
+    const spurt = Math.floor(t * 6) % 2 * 4;
+    block(P.x + 196, gy - 6 - spurt, 8, 30 + spurt, "#38bdf8");
+    block(P.x + 184, gy + 2 + spurt, 6, 6, "#7dd3fc");
+    block(P.x + 210, gy + 2 + spurt, 6, 6, "#7dd3fc");
+    block(P.x + 174, gy + 18, 52, 14, "#9ca3af");
+  } else if (level === 4) {
+    // stone bricks, two cells with bars, and torches that flicker
+    for (let r = 0; r < 5; r++)
+      for (let c = 0; c < 11; c++) block(P.x + c * 40 - (r % 2) * 20 + 1, P.y + r * 18 + 1, 38, 16, "#1e2230");
+    [40, 250].forEach(function (x) {
+      block(P.x + x, P.y + 24, 50, floorY - P.y - 24, "#07070b");
+      for (let i = 0; i < 5; i++) block(P.x + x + 3 + i * 11, P.y + 24, 4, floorY - P.y - 24, map.wall);
+    });
+    [150, 350].forEach(function (x, i) {
+      const flick = (Math.floor(t * 8) + i) % 2;
+      block(P.x + x + 3, P.y + 34, 4, 16, "#78350f");
+      block(P.x + x, P.y + 22 - flick * 3, 10, 12 + flick * 3, flick ? "#fde047" : "#f97316");
+    });
+  } else {
+    // rocks hanging from the roof of the cave, and the last of the king's gold
+    [20, 90, 160, 250, 310].forEach(function (x, i) {
+      block(P.x + x, P.y, 30, 10 + (i % 3) * 6, map.wall);
+      block(P.x + x + 9, P.y + 10 + (i % 3) * 6, 12, 10, map.wall);
+    });
+    goldPile(P.x + 352, floorY, 4, t);
+  }
+}
+
+function drawScene(t) {
+  const P = SCENE_BOX, u = t % SCENE_LOOP_TIME;
+  const gy = P.y + P.h - 44;          // the top of the squares the knight and the monsters stand on
+  const right = DIRS.ArrowRight;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(P.x, P.y, P.w, P.h);
+  ctx.clip();
+  block(P.x, P.y, P.w, P.h, map.floor);
+  drawBackdrop(t, P, gy);
+  block(P.x, gy + 32, P.w, 12, map.wall);     // the ground
+
+  const sky = level === 3;            // in the courtyard the knight walks all the way across
+  const stop = P.x + 150;             // in the other places he stops here
+  const kx = sky ? P.x - 40 + u * 60 : Math.min(stop, P.x - 40 + u * 55);
+  const f = u - 3.5;                  // seconds since the monster saw the knight
+
+  // gold coins on the ground. They are gone once the knight has walked over them
+  for (let i = 0; i < (sky ? 15 : 7); i++) {
+    const cx = P.x + 24 + i * 26;
+    if (cx > kx + 14) block(cx, gy + 12, 8, 8, "#f5b921");
+  }
+  // your archers walk behind the knight
+  for (let i = 0; i < archers.length; i++) drawArcher((kx - 26 * (i + 1)) / TILE, gy / TILE);
+
+  if (sky) {
+    // The flying dragon comes across the sky. The knight lifts his shield over his head as it goes by.
+    const fx = P.x + P.w + 30 - u * 75, near = Math.abs(fx - kx) < 60;
+    block(fx + 2, gy + 34, 26, 6, "rgba(0,0,0,0.5)");
+    knightAt(kx, gy, near ? DIRS.ArrowUp : right);
+    if (near) drawShield(kx / TILE, gy / TILE, DIRS.ArrowUp, 6, []);
+    monsterAt("flyer", fx, P.y + 12 + Math.sin(u * 4) * 5);
+  } else if (level === 2) {
+    // The ogre walks up and lifts its club. The knight's sword stuns it and pushes it back.
+    let ox = P.x + 290 + Math.sin(t * 1.2) * 18;
+    const look = { facing: Math.cos(t * 1.2) > 0 ? right : DIRS.ArrowLeft };
+    const swing = f >= 1.4 && f < 1.8;
+    if (f >= 0) {
+      look.facing = DIRS.ArrowLeft;
+      look.chasing = true;
+      ox = Math.max(kx + 32, ox - f * 160);
+      if (f >= 1 && f < 1.5) look.windup = 1.5 - f;
+      if (f >= 1.5) { ox = kx + 64; look.stun = Math.max(0.1, 4.6 - f); }
+    }
+    monsterAt("ogre", ox, gy, look);
+    knightAt(kx, gy, right);
+    if (swing) block(kx + 34, gy + 12, 28, 8, "#fff");
+  } else {
+    // The dragon sees the knight, flashes yellow, and breathes fire. The fire stops at the shield.
+    const reach = fireLength(level), spot = kx + 32 * (reach + 1);
+    const home = P.x + 290 + Math.sin(t * 1.5) * 18;
+    let dx = home;
+    const look = { facing: Math.cos(t * 1.5) > 0 ? right : DIRS.ArrowLeft };
+    const fire = f >= 1.4 && f < 3.2, shieldUp = f >= 0.9 && f < 3.4;
+    if (f >= 0 && f < 3.6) {
+      look.facing = DIRS.ArrowLeft;
+      look.chasing = true;
+      dx = Math.max(spot, home - f * 120);
+      if (f >= 0.8 && f < 1.4) look.windup = 1.4 - f;
+    } else if (f >= 3.6) {
+      // the fire did not work, so the dragon walks away
+      dx = Math.min(home, spot + (f - 3.6) * 120);
+      look.facing = right;
+    }
+    if (level >= 4) monsterAt("dragon", P.x + 352 + Math.sin(t * 1.1 + 2) * 12, gy, { facing: DIRS.ArrowLeft });
+    monsterAt("dragon", dx, gy, look);
+    if (fire) {
+      for (let i = 1; i <= reach; i++) {
+        square((spot - 32 * i) / TILE, gy / TILE, 28, (Math.floor(t * 16) + i) % 2 ? "#f97316" : "#fde047");
+      }
+    }
+    knightAt(kx, gy, right);
+    if (shieldUp) drawShield(kx / TILE, gy / TILE, right, 6, fire ? [{ kind: "dragon", attackTimer: t }] : []);
+  }
+  ctx.restore();
+  ctx.strokeStyle = map.wall;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(P.x, P.y, P.w, P.h);
+}
+
+// ---------- THE OPENING MOVIE ----------
+// It has one part for every line in MOVIE_WORDS:
+// 1. the king and his gold   2. the dragon flies in   3. it flies off and drops coins   4. the knight comes
+
+// The dragon in the movie is big, and it has wings so it can fly off with the gold.
+function movieDragon(x, y, lookRight, t) {
+  const flap = Math.floor(t * 6) % 2 ? -14 : 6;
+  block(x - 30, y + 8 + flap, 34, 14, "#7f1d1d");
+  block(x + 52, y + 8 + flap, 34, 14, "#7f1d1d");
+  block(x, y, 56, 56, "#b91c1c");
+  const ex = lookRight ? x + 36 : x + 8;
+  block(ex, y + 10, 12, 12, "#fff");
+  block(ex, y + 32, 12, 12, "#fff");
+}
+// Where the dragon is while it flies away. e goes from 0 (on the gold) to 1 (gone).
+function flyAway(e) {
+  return { x: 352 + 360 * e, y: 256 - 400 * e };
+}
+
+function drawMovie() {
+  const W = canvas.width, mid = W / 2, t = movieTimer, ground = 372;
+  const part = Math.min(MOVIE_WORDS.length - 1, Math.floor(t / MOVIE_PART_TIME));
+  const u = Math.min(1, t / MOVIE_PART_TIME - part);   // 0 at the start of a part, 1 at the end
+
+  // the night sky, with stars that twinkle, and the moon
+  block(0, -TOP, W, canvas.height, "#0b0b2a");
+  for (let i = 0; i < 40; i++) {
+    if ((i + Math.floor(t * 2)) % 7) block((i * i * 37 + i * 91) % W, -TOP + (i * i * 13 + i * 151) % 330, 2, 2, "#fff");
+  }
+  block(500, 4, 36, 36, "#fef9c3");
+  block(0, ground, W, canvas.height, "#14532d");
+
+  // the castle: two towers, a door, lit windows, and a flag
+  block(60, 200, 170, ground - 200, "#6b7280");
+  for (let i = 0; i < 7; i++) block(96 + i * 16, 190, 8, 10, "#6b7280");
+  [40, 200].forEach(function (x) {
+    block(x, 150, 50, ground - 150, "#9ca3af");
+    for (let i = 0; i < 3; i++) block(x + i * 20, 138, 10, 12, "#9ca3af");
+    block(x + 18, 186, 14, 22, "#fde047");
+  });
+  block(125, 310, 40, ground - 310, "#1f2937");
+  block(138, 236, 14, 22, "#fde047");
+  block(64, 96, 3, 42, "#d1d5db");
+  block(67, 96, Math.floor(t * 3) % 2 ? 22 : 18, 14, "#3b82f6");
+
+  // the king's gold. The dragon grabs it at the start of part 3
+  if (part < 2) goldPile(380, ground, 5, t);
+  else if (part === 2 && u < 0.15) goldPile(380, ground, Math.ceil(5 * (1 - u / 0.15)), t);
+
+  // the king: purple, with a gold crown. He hops when he is happy and shakes when he is scared
+  const scared = (part === 1 && u > 0.55) || part === 2;
+  let kingX = 286, kingY = ground - 28;
+  if (part === 0 || (part === 3 && u > 0.5)) kingY -= Math.abs(Math.sin(t * 5)) * 7;
+  if (scared) kingX += Math.floor(t * 12) % 2 ? 3 : -3;
+  block(kingX, kingY, 24, 28, "#7e22ce");
+  block(kingX + 4, kingY + 4, 16, 8, "#fcd9b6");
+  block(kingX, kingY - 6, 24, 6, "#fde047");
+  for (let i = 0; i < 3; i++) block(kingX + i * 9, kingY - 12, 6, 6, "#fde047");
+  if (scared) {
+    ctx.fillStyle = "#fff";
+    ctx.textAlign = "center";
+    ctx.font = "bold 22px Courier New";
+    ctx.fillText("!", kingX + 12, kingY - 20);
+  }
+
+  // coins fall from the dragon as it flies away, and stay on the ground
+  if (part >= 2) {
+    const since = (part === 2 ? u : 1) * MOVIE_PART_TIME + (part > 2 ? 5 : 0);   // seconds since part 3 started
+    for (let i = 0; i < 9; i++) {
+      const dropU = 0.22 + i * 0.065, dropAt = dropU * MOVIE_PART_TIME;
+      if (since < dropAt) continue;
+      const from = flyAway(Math.pow((dropU - 0.15) / 0.85, 1.5)), fall = since - dropAt;
+      const landY = ground + 2 + (i % 3) * 8;
+      block(from.x + 22 + (i * 37) % 30 - 15, Math.min(landY, from.y + 60 + 420 * fall * fall), 10, 10, i % 2 ? "#f5b921" : "#fde047");
+    }
+  }
+
+  // the dragon
+  if (part === 1) {
+    const e = 1 - Math.pow(1 - Math.min(1, u / 0.8), 2);
+    movieDragon(680 - 328 * e, -90 + 346 * e, false, t);
+  } else if (part === 2) {
+    const e = u < 0.15 ? 0 : Math.pow((u - 0.15) / 0.85, 1.5), at = flyAway(e);
+    if (u >= 0.15) goldPile(at.x + 28, at.y + 92, 3, t);     // the gold it carries
+    movieDragon(at.x, at.y, true, t);
+  }
+
+  // the knight walks in and lifts his sword. Then the name of the game shows
+  if (part === 3) {
+    const kx = -60 + 250 * Math.min(1, u / 0.5);
+    block(kx, ground - 48, 48, 48, "#3b82f6");
+    block(kx + 30, ground - 32, 16, 16, "#bfdbfe");
+    if (u > 0.55) block(kx + 19, ground - 96, 10, 46, "#fff");
+    if (u > 0.7) {
+      ctx.textAlign = "center";
+      ctx.fillStyle = "#fde047";
+      ctx.font = "bold 44px Courier New";
+      ctx.fillText("THE KNIGHT MAN", mid, 70);
+    }
+  }
+
+  // the words, typed out one letter at a time
+  block(0, 398, W, 90, "rgba(0,0,0,0.78)");
+  const words = MOVIE_WORDS[part];
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#fff";
+  ctx.font = "bold 18px Courier New";
+  ctx.fillText(words.slice(0, Math.ceil(words.length * Math.min(1, u * 2.5))), mid, 430);
+  ctx.fillStyle = "#9ca3af";
+  ctx.font = "14px Courier New";
+  ctx.fillText(TOUCH ? "Tap here to skip the movie" : "Press ENTER or SPACE to skip the movie", mid, 462);
 }
 
 function drawHud() {
-  document.getElementById("score").textContent = state === "title" ? 0 : score;
-  document.getElementById("level").textContent = state === "title" ? 1 : level;
-  document.getElementById("lives").textContent = state === "title" ? START_LIVES : lives;
-  document.getElementById("coinsLeft").textContent = state === "title" ? "-" : coins.size;
+  const fresh = state === "title" || score === undefined;   // no game has started yet
+  document.getElementById("score").textContent = fresh ? 0 : score;
+  document.getElementById("level").textContent = fresh ? 1 : level;
+  document.getElementById("lives").textContent = fresh ? START_LIVES : lives;
+  document.getElementById("coinsLeft").textContent = fresh ? "-" : coins.size;
   const bar = document.getElementById("shieldBar");
-  bar.style.width = (state === "title" ? 100 : Math.round(shield * 100)) + "%";
+  bar.style.width = (fresh ? 100 : Math.round(shield * 100)) + "%";
   bar.style.background = shieldBroken ? "#666" : "#22d3ee";
 }
 
 function draw() {
   // The map is drawn one square down, so the message strip sits above the top wall.
   ctx.setTransform(1, 0, 0, 1, 0, TOP);
-  if (state === "story") {
-    drawStory();
+  // the screens that cover the whole game
+  const screens = { story: drawStory, movie: drawMovie, name: drawName, board: drawBoard };
+  if (screens[state]) {
+    screens[state]();
     drawHud();
     return;
   }
@@ -1420,6 +2077,11 @@ function draw() {
     ctx.textAlign = "center";
     ctx.font = talking ? "bold 17px Courier New" : "15px Courier New";
     ctx.fillText(talking ? notice : "Level " + level + ": " + map.name, canvas.width / 2, -TOP + 22);
+    // the clock: how long you have been playing
+    ctx.fillStyle = "#9ca3af";
+    ctx.textAlign = "right";
+    ctx.font = "15px Courier New";
+    ctx.fillText(clock(playTime), canvas.width - 8, -TOP + 22);
   }
 
   // every place has its own floor color and wall color
@@ -1480,8 +2142,7 @@ function draw() {
     });
 
     // knight, with a light patch on the side he is facing
-    square(knight.px, knight.py, 24, "#3b82f6");
-    square(knight.px + knight.facing.dx * 0.25, knight.py + knight.facing.dy * 0.25, 8, "#bfdbfe");
+    drawKnight(knight.px, knight.py, knight.facing);
     if (swingTimer > 0) {
       for (let i = 1; i <= SWORD_REACH; i++) {
         const sx = knight.px + knight.facing.dx * i, sy = knight.py + knight.facing.dy * i;
@@ -1499,15 +2160,37 @@ function draw() {
 
   }
 
-  const go = TOUCH ? "Tap here" : "ENTER";
   if (state === "title") {
     banner("THE KNIGHT MAN", TOUCH ? "Tap here to start" : "Press ENTER to start");
     underBanner("version " + VERSION);
+    // the button for the TOP KNIGHTS list
+    const b = BOARD_BUTTON;
+    block(b.x, b.y, b.w, b.h, "rgba(0,0,0,0.8)");
+    ctx.strokeStyle = "#fde047";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(b.x, b.y, b.w, b.h);
+    ctx.fillStyle = "#fde047";
+    ctx.textAlign = "center";
+    ctx.font = "bold 18px Courier New";
+    ctx.fillText("TOP KNIGHTS", canvas.width / 2, b.y + 27);
+    if (!TOUCH) {
+      block(b.x, b.y + b.h + 4, b.w, 20, "rgba(0,0,0,0.8)");
+      ctx.fillStyle = "#d1d5db";
+      ctx.font = "14px Courier New";
+      ctx.fillText("click it, or press L", canvas.width / 2, b.y + b.h + 19);
+    }
   }
+  const goOn = (TOUCH ? "Tap here" : "Press ENTER") + " to go on";
   if (state === "hit") banner("OUCH!", hitBy);
   if (state === "level") banner("LEVEL " + level + " DONE!", "Score " + score);
-  if (state === "won") banner("YOU WIN!", "All " + MAX_LEVEL + " levels! Score " + score + ". " + go + " to play again");
-  if (state === "over") banner("GAME OVER", "Level " + level + ", score " + score + ". " + go + " to try again");
+  if (state === "won") {
+    banner("YOU WIN!", "All " + MAX_LEVEL + " levels in " + clock(playTime) + ", with " + livesWords(lives) + " left!");
+    underBanner(goOn);
+  }
+  if (state === "over") {
+    banner("GAME OVER", "Level " + level + ", " + score + " points, time " + clock(playTime));
+    underBanner(goOn);
+  }
 
   drawHud();
 }

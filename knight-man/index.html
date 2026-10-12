@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>The Knight Man (v8)</title>
+<title>The Knight Man (v9)</title>
 <style>
   body { margin: 0; background: #111; color: #eee; font-family: "Courier New", monospace;
          display: flex; flex-direction: column; align-items: center; }
@@ -91,7 +91,7 @@
 </div>
 
 <script>
-const VERSION = 8;                // shows on the title screen, so you know which game loaded
+const VERSION = 9;                // shows on the title screen, so you know which game loaded
 
 // =====================================================
 // NUMBERS YOU CAN CHANGE (this is called "tuning")
@@ -1286,6 +1286,269 @@ function update(dt) {
   moveArrows(dt);
 }
 
+// =====================================================
+// THE PICTURES (the art)
+// These are the looks Seby picked on the pick sheet (character-picks.html).
+// Every picture is 16 rows of 16 letters. A dot is an empty square. Each letter is one color.
+// To change a picture, change the letters. To change a color, change it in "colors".
+// "body" is the letter that changes color when a monster chases you or is stunned.
+// =====================================================
+const ART = {
+  // The Silver Knight. "down" is the picture Seby picked. "side" and "up" show him walking the other ways.
+  knight: { body: "S", colors: { S: "#cbd5e1", D: "#334155", B: "#3b82f6", Y: "#fde047" },
+    down: [
+      ".......BB.......",
+      "......BBBB......",
+      ".....SSSSSS.....",
+      "....SSSSSSSS....",
+      "....SDDDDDDS....",
+      "....SSSDDSSS....",
+      ".....SSSSSS.....",
+      "..BBBSSSSSS..S..",
+      ".BBBBBSSSSSS.S..",
+      ".BBYBBSSSSSS.S..",
+      ".BBBBBSSSSSSYYY.",
+      "..BBBSSSSSS..D..",
+      ".....SSSSSS.....",
+      ".....SS..SS.....",
+      ".....DD..DD.....",
+      "....DDD..DDD...." ],
+    side: [
+      "......BB........",
+      ".....BBBB.......",
+      ".....SSSSSS.....",
+      "....SSSSSSSS....",
+      "....SSSSDDDD....",
+      "....SSSSSSDD....",
+      ".....SSSSSS.....",
+      "....SSSSSSS...S.",
+      "...SBBBBSSS...S.",
+      "...SBBYBBSS...S.",
+      "...SBBBBBSSSYYY.",
+      "....SBBBSSS...D.",
+      ".....SSSSSS.....",
+      ".....SS.SS......",
+      ".....DD.DD......",
+      ".....DDD.DDD...." ],
+    up: [
+      ".......BB.......",
+      "......BBBB......",
+      ".....SSSSSS.....",
+      "....SSSSSSSS....",
+      "....SSSSSSSS....",
+      "....SSSSSSSS....",
+      ".....SSSSSS.....",
+      "..S..SSSSSSBBB..",
+      "..S.SSSSSSBBBBB.",
+      "..S.SSSSSSBBBBB.",
+      ".YYYSSSSSSBBBBB.",
+      "..D..SSSSSSBBB..",
+      ".....SSSSSS.....",
+      ".....SS..SS.....",
+      ".....DD..DD.....",
+      "....DDD..DDD...." ] },
+
+  // The Red Dragon. "side" is the picture Seby picked. You can only see its eyes on the side it is looking.
+  // "chase" is its colors when it is chasing you. "fly" is the wing-down picture for the opening movie.
+  dragon: { body: "R", colors: { R: "#dc2626", O: "#fb923c", W: "#ffffff", D: "#7f1d1d" },
+    chase: { R: "#ff5a1f", O: "#fde68a", W: "#ffffff", D: "#9a3412" },
+    side: [
+      "..........D..D..",
+      ".........RRRRR..",
+      "....DD..RRRWRRR.",
+      "...DDDD.RRRRRRRR",
+      "..DDDDDDRRRRRWRW",
+      "..DDDDDRRRRR....",
+      "...DDDRRRRRR....",
+      "....RRRRRRR.....",
+      "R..RRRRROOO.....",
+      "R.RRRRROOOO.....",
+      "RRRRRRROOOO.....",
+      ".RRRRRROOO......",
+      "..RRRRRRRR......",
+      "...RR...RR......",
+      "...RR...RR......",
+      "..DDD..DDD......" ],
+    fly: [
+      "..........D..D..",
+      ".........RRRRR..",
+      "........RRRWRRR.",
+      "........RRRRRRRR",
+      "........RRRRRWRW",
+      ".......RRRRR....",
+      "......RRRRRR....",
+      "....DDDDRRR.....",
+      "R..DDDDDDOO.....",
+      "R.DDDDDDOOO.....",
+      "RRRDDDDOOOO.....",
+      ".RRRDDROOO......",
+      "..RRRRRRRR......",
+      "...RR...RR......",
+      "...RR...RR......",
+      "..DDD..DDD......" ],
+    down: [
+      "...D........D...",
+      "...DR......RD...",
+      "....RRRRRRRR....",
+      "...RRRRRRRRRR...",
+      "...RWWRRRRWWR...",
+      "...RWDRRRRDWR...",
+      "...RRRRRRRRRR...",
+      "DD..RRDRRDRR..DD",
+      "DDD.RRRRRRRR.DDD",
+      "DDDDRROOOORRDDDD",
+      "DDDRROOOOOORRDDD",
+      ".DDRROOOOOORRDD.",
+      "...RROOOOOORR...",
+      "...RRRRRRRRRR...",
+      "...RRR....RRR...",
+      "..DDDD....DDDD.." ],
+    up: [
+      "...D........D...",
+      "...DR......RD...",
+      "....RRRRRRRR....",
+      "...RRRRRRRRRR...",
+      "...RRRRDDRRRR...",
+      "...RRRRRRRRRR...",
+      "...RRRRDDRRRR...",
+      "DD..RRRRRRRR..DD",
+      "DDD.RRRDDRRR.DDD",
+      "DDDDRRRRRRRRDDDD",
+      "DDDRRRRDDRRRRDDD",
+      ".DDRRRRRRRRRRDD.",
+      "...RRRRDDRRRR...",
+      "...RRRRRRRRRR...",
+      "...RRR.RR.RRR...",
+      "..DDDD.RR.DDDD.." ] },
+
+  // The Green Ogre. It always looks right at you, because it sees all the way around.
+  // The game flips the picture, so the club is on the side the ogre is facing.
+  ogre: { body: "G", colors: { G: "#22c55e", D: "#166534", B: "#78350f", W: "#ffffff" },
+    chase: { G: "#86efac", D: "#166534", B: "#78350f", W: "#ffffff" },
+    down: [
+      "....GGGGGGGG....",
+      "...GGGGGGGGGG...",
+      "..GGWDGGGGWDGG..",
+      "..GGGGGGGGGGGG..",
+      "..GGGDDDDDDGGG..",
+      "...GGWGGGGWGG...",
+      "....GGGGGGGG..BB",
+      ".GGGGGGGGGGGGBBB",
+      "GGGGGGGGGGGGGBBB",
+      "GGG.BBBBBBBB.BB.",
+      "GGG.BBBBBBBB.B..",
+      "GG..BBBBBBBB.B..",
+      "....BBBBBBBB.G..",
+      "....GGG..GGG....",
+      "....GGG..GGG....",
+      "...DDDD..DDDD..." ] },
+
+  // The Fire Bird (the flying dragon), seen from above. In this picture it flies up.
+  // The game turns the picture, so its head points the way it flies.
+  flyer: { body: "O", colors: { O: "#f97316", Y: "#fde047", R: "#dc2626", W: "#ffffff" },
+    up: [
+      ".......RR.......",
+      "......ROOR......",
+      "......OWWO......",
+      "R.....OOOO.....R",
+      "RR...OOYYOO...RR",
+      "RRR.OOOYYOOO.RRR",
+      "ORRROOYYYYOORRRO",
+      "OORRROYYYYORRROO",
+      "YOORRROYYORRROOY",
+      ".YOO.ROOOOR.OOY.",
+      "..Y...OOOO...Y..",
+      "......OOOO......",
+      ".....R.OO.R.....",
+      "....RR.OO.RR....",
+      "....Y..RR..Y....",
+      ".......YY......." ] },
+
+  // The Forest Archer. The game flips the picture when he walks left.
+  archer: { body: "G", colors: { G: "#16a34a", F: "#f5c9a3", B: "#92400e", D: "#14532d" },
+    down: [
+      "......GGGG......",
+      ".....GGGGGG.....",
+      "....GGFFFFGG....",
+      "....GFDFFDFG....",
+      "....GFFFFFFG....",
+      ".....GFFFFG...B.",
+      "....GGGGGGGG.B..",
+      "...GGGGGGGGGB...",
+      "..FGGGGGGGGFB...",
+      "..F.GGGGGG.FB...",
+      "....GGDDGG..B...",
+      "....GGGGGG...B..",
+      "....DDDDDD....B.",
+      "....BB..BB......",
+      "....BB..BB......",
+      "...BBB..BBB....." ] }
+};
+
+// The game paints a picture as short bars, one row at a time. A bar is: column, row, how long, letter.
+function makeBars(rows) {
+  const bars = [];
+  rows.forEach(function (row, y) {
+    let x = 0;
+    while (x < row.length) {
+      let n = 1;
+      while (x + n < row.length && row[x + n] === row[x]) n++;
+      if (row[x] !== ".") bars.push([x, y, n, row[x]]);
+      x += n;
+    }
+  });
+  return bars;
+}
+// The same picture, looking the other way.
+function flipRows(rows) {
+  return rows.map(function (row) { return row.split("").reverse().join(""); });
+}
+// The same picture, turned a quarter turn to the right.
+function turnRows(rows) {
+  const n = rows.length;
+  return rows.map(function (row, y) {
+    let out = "";
+    for (let x = 0; x < n; x++) out += rows[n - 1 - x][y];
+    return out;
+  });
+}
+function leftAndRight(rows) {
+  return { right: makeBars(rows), left: makeBars(flipRows(rows)) };
+}
+function fourWays(art) {
+  const pics = leftAndRight(art.side);
+  pics.up = makeBars(art.up);
+  pics.down = makeBars(art.down);
+  return pics;
+}
+const KNIGHT_PICS = fourWays(ART.knight);
+const DRAGON_PICS = fourWays(ART.dragon);
+const DRAGON_FLY_PICS = leftAndRight(ART.dragon.fly);
+const OGRE_PICS = leftAndRight(ART.ogre.down);
+const ARCHER_PICS = leftAndRight(ART.archer.down);
+const FLYER_PICS = { up: makeBars(ART.flyer.up),
+                     right: makeBars(turnRows(ART.flyer.up)),
+                     down: makeBars(turnRows(turnRows(ART.flyer.up))),
+                     left: makeBars(turnRows(turnRows(turnRows(ART.flyer.up)))) };
+
+// Which way is this? dir has dx and dy, like the arrow keys.
+function wayName(dir) {
+  if (dir.dx > 0) return "right";
+  if (dir.dx < 0) return "left";
+  return dir.dy < 0 ? "up" : "down";
+}
+
+// Paints a picture with its top-left corner at x, y (dots on the screen, not squares of the map).
+// dot is how big one square of the picture is. In the game it is 2, so a picture is 32 dots wide.
+function drawPic(bars, colors, x, y, dot) {
+  x = Math.round(x);
+  y = Math.round(y);
+  bars.forEach(function (b) {
+    ctx.fillStyle = colors[b[3]];
+    ctx.fillRect(x + b[0] * dot, y + b[1] * dot, b[2] * dot, dot);
+  });
+}
+
 // ---------- DRAWING ----------
 function square(px, py, size, color) {
   const off = (TILE - size) / 2;
@@ -1315,6 +1578,19 @@ function underBanner(text) {
 function stunColor(m) {
   return Math.floor(m.stun * 6) % 2 ? "#7c6f8a" : "#a99bb8";
 }
+// A stunned monster turns purple and blinks. Its eyes go dark.
+function stunLook(art, m) {
+  const look = {};
+  Object.keys(art.colors).forEach(function (letter) { look[letter] = "#4e445c"; });
+  look[art.body] = stunColor(m);
+  return look;
+}
+// The same colors, but with a new color for the body.
+function bodyColor(art, color) {
+  const look = Object.assign({}, art.colors);
+  look[art.body] = color;
+  return look;
+}
 
 function chaseMark(m) {
   if (m.chasing && m.stun <= 0) {
@@ -1326,35 +1602,25 @@ function chaseMark(m) {
 }
 
 function drawDragon(d) {
-  // dark red = wandering, bright orange = chasing, purple = stunned, yellow flash = about to breathe fire
-  let color = d.chasing ? "#ff5a1f" : "#b91c1c";
-  if (d.windup > 0) color = Math.floor(d.windup * 20) % 2 ? "#facc15" : "#ff5a1f";
-  if (d.stun > 0) color = stunColor(d);
-  square(d.px, d.py, 26, color);
-
-  // two eyes on the side the dragon is looking
-  const f = d.facing;
-  const cx = d.px + f.dx * 0.25, cy = d.py + f.dy * 0.25;
-  const sideX = f.dy !== 0 ? 0.18 : 0, sideY = f.dx !== 0 ? 0.18 : 0;
-  square(cx + sideX, cy + sideY, 6, "#fff");
-  square(cx - sideX, cy - sideY, 6, "#fff");
+  // red = wandering, bright orange = chasing, purple = stunned, yellow flash = about to breathe fire
+  const art = ART.dragon;
+  let look = d.chasing ? art.chase : art.colors;
+  if (d.windup > 0) look = bodyColor(art, Math.floor(d.windup * 20) % 2 ? "#facc15" : "#ff5a1f");
+  if (d.stun > 0) look = stunLook(art, d);
+  // The dragon only sees the way it is looking. From the side you see one eye, from the front two,
+  // and from the back none.
+  drawPic(DRAGON_PICS[wayName(d.facing)], look, d.px * TILE, d.py * TILE, 2);
   chaseMark(d);
 }
 
 function drawOgre(o) {
-  // dark green = wandering, bright green = chasing, purple = stunned, brown flash = lifting the club
-  let color = o.chasing ? "#4ade80" : "#15803d";
-  if (o.windup > 0) color = Math.floor(o.windup * 20) % 2 ? "#a16207" : "#4ade80";
-  if (o.stun > 0) color = stunColor(o);
-  square(o.px, o.py, 28, color);
-
-  // two eyes looking right at you, because the ogre sees all the way around
-  square(o.px - 0.15, o.py - 0.1, 6, "#fff");
-  square(o.px + 0.15, o.py - 0.1, 6, "#fff");
-
-  // the club, held on the side the ogre is facing
-  const f = o.facing;
-  square(o.px + f.dx * 0.45, o.py + f.dy * 0.45, 10, "#78350f");
+  // green = wandering, light green = chasing, purple = stunned, brown flash = lifting the club
+  const art = ART.ogre;
+  let look = o.chasing ? art.chase : art.colors;
+  if (o.windup > 0) look = bodyColor(art, Math.floor(o.windup * 20) % 2 ? "#a16207" : "#86efac");
+  if (o.stun > 0) look = stunLook(art, o);
+  // the club is on the side the ogre is facing
+  drawPic(o.facing.dx < 0 ? OGRE_PICS.left : OGRE_PICS.right, look, o.px * TILE, o.py * TILE, 2);
   chaseMark(o);
 }
 
@@ -1363,20 +1629,11 @@ function drawFlyer(m) {
   ctx.fillStyle = "rgba(0,0,0,0.45)";
   ctx.fillRect(m.px * TILE + 7, m.py * TILE + 11, 22, 22);
 
-  // body and wings
-  const color = m.stun > 0 ? stunColor(m) : "#db2777";
+  // its head points the way it flies
+  const art = ART.flyer;
   const across = Math.abs(m.vx) >= Math.abs(m.vy);   // flying more sideways than up and down
-  const wx = across ? 0 : 0.42, wy = across ? 0.42 : 0;
-  square(m.px - 0.12 + wx, m.py - 0.12 + wy, 12, m.stun > 0 ? color : "#f9a8d4");
-  square(m.px - 0.12 - wx, m.py - 0.12 - wy, 12, m.stun > 0 ? color : "#f9a8d4");
-  square(m.px - 0.12, m.py - 0.12, 22, color);
-
-  // two eyes, looking the way it flies
-  const fx = Math.sign(Math.round(m.vx * 2)), fy = Math.sign(Math.round(m.vy * 2));
-  const cx = m.px - 0.12 + fx * 0.18, cy = m.py - 0.12 + fy * 0.18;
-  const sideX = across ? 0 : 0.14, sideY = across ? 0.14 : 0;
-  square(cx + sideX, cy + sideY, 5, "#fff");
-  square(cx - sideX, cy - sideY, 5, "#fff");
+  const way = across ? (m.vx < 0 ? "left" : "right") : (m.vy < 0 ? "up" : "down");
+  drawPic(FLYER_PICS[way], m.stun > 0 ? stunLook(art, m) : art.colors, (m.px - 0.12) * TILE, (m.py - 0.12) * TILE, 2);
 }
 
 // A shield bar on one side of a square.
@@ -1405,17 +1662,14 @@ function stoppedBy(holder) {
   return monsters.filter(function (m) { return m.attackTimer > 0 && attackStoppedBy(m) === holder; });
 }
 
-// The knight: a blue square with a light patch on the side he is facing.
+// The knight: the Silver Knight. He has a picture for each way he can face.
 function drawKnight(px, py, facing) {
-  square(px, py, 24, "#3b82f6");
-  square(px + facing.dx * 0.25, py + facing.dy * 0.25, 8, "#bfdbfe");
+  drawPic(KNIGHT_PICS[wayName(facing)], ART.knight.colors, px * TILE, py * TILE, 2);
 }
 
-// An archer: a small light-blue square with a brown bow.
-function drawArcher(px, py) {
-  square(px, py, 18, "#93c5fd");
-  ctx.fillStyle = "#78350f";
-  ctx.fillRect(px * TILE + 9, py * TILE + 14, 14, 4);
+// An archer: the Forest Archer. lookLeft flips him, so he faces the way he walks.
+function drawArcher(px, py, lookLeft) {
+  drawPic(lookLeft ? ARCHER_PICS.left : ARCHER_PICS.right, ART.archer.colors, px * TILE, py * TILE, 2);
 }
 
 // Who is in this level, for the story screen. A monster that was not in the level before is marked new.
@@ -1468,7 +1722,7 @@ function drawStory() {
       const px = (COLS - 1) / 2 + (i - (cast.length - 1) / 2) * gap, py = 9.1;
       const m = makeMonster(c.kind, { x: px, y: py });
       m.facing = c.kind === "ogre" ? DIRS.ArrowRight : DIRS.ArrowDown;
-      m.vx = 1;
+      m.vy = -1;
       if (c.kind === "dragon") drawDragon(m);
       if (c.kind === "ogre") drawOgre(m);
       if (c.kind === "flyer") drawFlyer(m);
@@ -1765,7 +2019,7 @@ function drawBoard() {
 // =====================================================
 // MOVING PICTURES
 // The opening movie, and the small moving picture on every story screen.
-// They use the same squares as the game. When we draw real art, they get it too.
+// They use the same pictures as the game (see THE PICTURES).
 // =====================================================
 
 // These draw a character with its top-left corner at a spot on the screen (dots, not squares of the map).
@@ -1875,13 +2129,13 @@ function drawScene(t) {
     if (cx > kx + 14) block(cx, gy + 12, 8, 8, "#f5b921");
   }
   // your archers walk behind the knight
-  for (let i = 0; i < archers.length; i++) drawArcher((kx - 26 * (i + 1)) / TILE, gy / TILE);
+  for (let i = 0; i < archers.length; i++) drawArcher((kx - 30 * (i + 1)) / TILE, gy / TILE);
 
   if (sky) {
     // The flying dragon comes across the sky. The knight lifts his shield over his head as it goes by.
     const fx = P.x + P.w + 30 - u * 75, near = Math.abs(fx - kx) < 60;
     block(fx + 2, gy + 34, 26, 6, "rgba(0,0,0,0.5)");
-    knightAt(kx, gy, near ? DIRS.ArrowUp : right);
+    knightAt(kx, gy, right);
     if (near) drawShield(kx / TILE, gy / TILE, DIRS.ArrowUp, 6, []);
     monsterAt("flyer", fx, P.y + 12 + Math.sin(u * 4) * 5);
   } else if (level === 2) {
@@ -1936,15 +2190,10 @@ function drawScene(t) {
 // It has one part for every line in MOVIE_WORDS:
 // 1. the king and his gold   2. the dragon flies in   3. it flies off and drops coins   4. the knight comes
 
-// The dragon in the movie is big, and it has wings so it can fly off with the gold.
+// The dragon in the movie is big (twice as big as in the game). Its wing flaps up and down.
 function movieDragon(x, y, lookRight, t) {
-  const flap = Math.floor(t * 6) % 2 ? -14 : 6;
-  block(x - 30, y + 8 + flap, 34, 14, "#7f1d1d");
-  block(x + 52, y + 8 + flap, 34, 14, "#7f1d1d");
-  block(x, y, 56, 56, "#b91c1c");
-  const ex = lookRight ? x + 36 : x + 8;
-  block(ex, y + 10, 12, 12, "#fff");
-  block(ex, y + 32, 12, 12, "#fff");
+  const pics = Math.floor(t * 6) % 2 ? DRAGON_PICS : DRAGON_FLY_PICS;
+  drawPic(lookRight ? pics.right : pics.left, ART.dragon.colors, x - 4, y - 4, 4);
 }
 // Where the dragon is while it flies away. e goes from 0 (on the gold) to 1 (gone).
 function flyAway(e) {
@@ -2022,9 +2271,13 @@ function drawMovie() {
   // the knight walks in and lifts his sword. Then the name of the game shows
   if (part === 3) {
     const kx = -60 + 250 * Math.min(1, u / 0.5);
-    block(kx, ground - 48, 48, 48, "#3b82f6");
-    block(kx + 30, ground - 32, 16, 16, "#bfdbfe");
-    if (u > 0.55) block(kx + 19, ground - 96, 10, 46, "#fff");
+    const lifted = u > 0.55, top = ground - 48;
+    drawPic(lifted ? KNIGHT_PICS.down : KNIGHT_PICS.right, ART.knight.colors, kx, top, 3);
+    if (lifted) {
+      // his sword gets long, and the tip shines
+      block(kx + 39, top - 24, 3, 45, "#cbd5e1");
+      block(kx + 36, top - 27, 9, 3, Math.floor(t * 8) % 2 ? "#fff" : "#fde047");
+    }
     if (u > 0.7) {
       ctx.textAlign = "center";
       ctx.fillStyle = "#fde047";
@@ -2126,7 +2379,7 @@ function draw() {
     // the train, back to front, so the knight is on top when they bunch up
     for (let i = archers.length - 1; i >= 0; i--) {
       const a = archers[i];
-      drawArcher(a.px, a.py);
+      drawArcher(a.px, a.py, a.back !== null && a.back.dx > 0);
       if (a.shieldUp && state === "play") drawShield(a.px, a.py, a.back, 5, stoppedBy(a));
     }
 
@@ -2141,7 +2394,7 @@ function draw() {
       ctx.stroke();
     });
 
-    // knight, with a light patch on the side he is facing
+    // the knight
     drawKnight(knight.px, knight.py, knight.facing);
     if (swingTimer > 0) {
       for (let i = 1; i <= SWORD_REACH; i++) {

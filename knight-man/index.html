@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>The Knight Man (v5)</title>
+<title>The Knight Man (v6)</title>
 <style>
   body { margin: 0; background: #111; color: #eee; font-family: "Courier New", monospace;
          display: flex; flex-direction: column; align-items: center; }
@@ -15,27 +15,30 @@
   canvas { border: 4px solid #888; background: #222; display: block; }
   #help { margin-top: 10px; font-size: 14px; color: #aaa; text-align: center; line-height: 1.6; }
 
-  /* ---------- PHONE AND TABLET BUTTONS ----------
+  /* ---------- PHONE AND TABLET: THE STICK AND THE BUTTONS ----------
      They only show up on a touch screen. On a computer the game looks the same as before. */
-  #dpad, #actions, .touchHelp { display: none; }
+  #stick, #actions, .touchHelp { display: none; }
   @media (pointer: coarse) {
     body { touch-action: manipulation; -webkit-user-select: none; user-select: none;
            -webkit-touch-callout: none; overflow-x: hidden; }
     h1 { font-size: 18px; margin: 8px 0 4px; }
     #hud { width: calc(100vw - 16px); max-width: 608px; font-size: clamp(10px, 3vw, 16px); }
     #shieldBox { width: 40px; }
-    #wrap { display: grid; grid-template-areas: "game game" "dpad actions";
+    #wrap { display: grid; grid-template-areas: "game game" "stick actions";
             align-items: center; justify-items: center; gap: 12px; }
     canvas { grid-area: game; width: calc(100vw - 16px); max-width: 608px; height: auto;
              box-sizing: border-box; touch-action: none; }
-    #dpad { grid-area: dpad; display: block; position: relative; width: 150px; height: 150px; touch-action: none; }
-    #dpad div { position: absolute; width: 50px; height: 50px; background: #444; border: 2px solid #888;
-                box-sizing: border-box; display: flex; align-items: center; justify-content: center;
-                font-size: 22px; color: #eee; }
-    #dpad div.on { background: #3b82f6; }
-    #dUp { left: 50px; top: 0; } #dDown { left: 50px; top: 100px; }
-    #dLeft { left: 0; top: 50px; } #dRight { left: 100px; top: 50px; }
-    #dMid { left: 50px; top: 50px; background: #333 !important; border-color: #555 !important; }
+    /* the stick: a round base, and a blue knob that follows your finger */
+    #stick { grid-area: stick; display: block; position: relative; width: 150px; height: 150px;
+             border-radius: 50%; background: #2a2a2a; border: 3px solid #888; box-sizing: border-box;
+             touch-action: none; }
+    #stick .mark { position: absolute; width: 30px; height: 30px; display: flex; align-items: center;
+                   justify-content: center; font-size: 15px; color: #777; pointer-events: none; }
+    #stick .mark.on { color: #fde047; }
+    #dUp { left: 57px; top: 0; } #dDown { left: 57px; bottom: 0; }
+    #dLeft { left: 0; top: 57px; } #dRight { right: 0; top: 57px; }
+    #knob { position: absolute; left: 42px; top: 42px; width: 60px; height: 60px; border-radius: 50%;
+            background: #3b82f6; border: 3px solid #eee; box-sizing: border-box; pointer-events: none; }
     #actions { grid-area: actions; display: flex; gap: 14px; touch-action: none; }
     #actions div { width: 76px; height: 76px; border-radius: 50%; border: 3px solid #eee;
                    display: flex; align-items: center; justify-content: center;
@@ -51,7 +54,7 @@
   @media (pointer: coarse) and (orientation: landscape) {
     h1, #help { display: none; }
     #hud { margin: 4px 0; }
-    #wrap { grid-template-areas: "dpad game actions"; }
+    #wrap { grid-template-areas: "stick game actions"; }
     canvas { height: calc(100vh - 40px); height: calc(100dvh - 40px); width: auto; max-width: none; }
     #actions { flex-direction: column; }
   }
@@ -68,9 +71,10 @@
 </div>
 <div id="wrap">
   <canvas id="game" width="608" height="480"></canvas>
-  <div id="dpad">
-    <div id="dUp">&#9650;</div><div id="dLeft">&#9664;</div><div id="dMid"></div>
-    <div id="dRight">&#9654;</div><div id="dDown">&#9660;</div>
+  <div id="stick">
+    <div id="dUp" class="mark">&#9650;</div><div id="dLeft" class="mark">&#9664;</div>
+    <div id="dRight" class="mark">&#9654;</div><div id="dDown" class="mark">&#9660;</div>
+    <div id="knob"></div>
   </div>
   <div id="actions">
     <div id="swordBtn">SWORD</div>
@@ -80,12 +84,12 @@
 <div id="help">
   <span class="keyHelp">ARROW KEYS: move &nbsp;|&nbsp; SPACE: swing sword &nbsp;|&nbsp; hold S: shield &nbsp;|&nbsp; ENTER: start<br>
   The shield only covers the side you face. Fire and clubs stop at it. Hold S and tap an arrow to turn it.<br>
-  Collect most of the coins and an archer shows up in the forest. Stand next to him and he joins you.</span>
-  <span class="touchHelp">Tap the game to start. Hold SHIELD and tap an arrow to turn your shield. Collect most of the coins and an archer shows up in the forest.</span>
+  Collect most of the coins and an archer shows up. Stand next to him and he joins you. Every level is a new place.</span>
+  <span class="touchHelp">Tap the game to start. Drag the stick to move. Hold SHIELD and push the stick to turn your shield. Collect most of the coins and an archer shows up. Every level is a new place.</span>
 </div>
 
 <script>
-const VERSION = 5;                // shows on the title screen, so you know which game loaded
+const VERSION = 6;                // shows on the title screen, so you know which game loaded
 
 // =====================================================
 // NUMBERS YOU CAN CHANGE (this is called "tuning")
@@ -104,7 +108,7 @@ const SHIELD_REFILL_SECONDS = 5;  // how long an empty shield takes to fill up
 
 // Dragon (walks on the ground, only sees the way its eyes point, sees far)
 const DRAGON_WANDER_SPEED = 2.5;  // dragon speed when it can't see you
-const DRAGON_CHASE_SPEED = 5;     // dragon speed when it is chasing you
+const DRAGON_CHASE_SPEED = 4.5;    // dragon speed when it is chasing you
 const FIRE_LENGTH_START = 2;      // squares of fire on level 1
 const FIRE_LONGER_EVERY = 3;      // fire grows 1 square every this many levels
 const FIRE_REST_START = 2;        // seconds between fire blasts on level 1
@@ -133,7 +137,6 @@ const FLYER_PATH = [
 
 // Archers (they follow the knight in a train and shoot arrows)
 const ARCHER_COINS = 0.75;        // the archer shows up when this much of the coins are collected (0.75 is 75%)
-const FOREST_STARTS_AT = 10;      // the forest is this column and everything to the right of it
 const ARROW_RANGE = 5;            // how many squares away an archer can shoot
 const ARROW_REST = 3;             // seconds between one archer's arrows
 const ARROW_STUN_TIME = 2;        // seconds a monster is stunned by an arrow
@@ -141,6 +144,10 @@ const ARROW_SPEED = 16;           // squares per second
 const ARCHER_SHIELD_SECONDS = 2;  // how long an archer's shield lasts
 const ARCHER_SHIELD_REFILL_SECONDS = 5;  // how long an empty archer shield takes to fill up
 const NOTICE_TIME = 3;            // seconds a message stays at the top of the game
+
+// The stick (phone and tablet)
+const STICK_DEAD = 0.2;           // how far you push the stick before the knight moves (0.2 is 20% of the way out)
+const STICK_STAY = 1.4;           // near a corner, the stick keeps going the way it was going. Bigger = harder to turn by mistake
 
 // Levels: who is in each level. The game ends after the last one.
 const LEVELS = [
@@ -154,25 +161,115 @@ const MAX_LEVEL = LEVELS.length;
 const LEVEL_BANNER_TIME = 2;      // seconds the "LEVEL 2" sign shows
 
 // =====================================================
-// THE MAZE (Maze B: castle on the left, grounds on the right)
-// # is a wall or a tree. A dot is an open square with a gold coin.
+// THE MAPS (a new place for every level)
+// Level 1 uses the first map, level 2 uses the second, and so on.
+// In the rows, # is a wall, a tree, or a rock. A dot is an open square with a gold coin.
+// wall and floor are the colors of that place.
+// archerArea is the box where the archer shows up: [left column, top row, right column, bottom row].
+// archerNews is the message you see when he shows up.
+// If you change a map, keep the start squares (just below the maps) open.
 // =====================================================
-const MAZE = [
-  "###################",
-  "#.......#.........#",
-  "#.#..##.#..##..#..#",
-  "#.#...#......#...##",
-  "#.#.#.#.#.#...##..#",
-  "#...#.......#.....#",
-  "#.#.#.#.#.#...#.#.#",
-  "#.#...#.#..##.....#",
-  "#.##.##.#...#.#.#.#",
-  "#.................#",
-  "#.##.##.#.#..#.#..#",
-  "#.#...#......#..#.#",
-  "#.##..#.#.##......#",
-  "#.......#.....#...#",
-  "###################"
+const MAPS = [
+  // Level 1. The castle is on the left and the grounds, with trees, are on the right.
+  { name: "The Castle and Grounds", wall: "#888", floor: "#222",
+    archerArea: [10, 1, 17, 13], archerNews: "An archer is hiding in the forest! Go get him",
+    rows: [
+      "###################",
+      "#.......#.........#",
+      "#.#..##.#..##..#..#",
+      "#.#...#......#...##",
+      "#.#.#.#.#.#...##..#",
+      "#...#.......#.....#",
+      "#.#.#.#.#.#...#.#.#",
+      "#.#...#.#..##.....#",
+      "#.##.##.#...#.#.#.#",
+      "#.................#",
+      "#.##.##.#.#..#.#..#",
+      "#.#...#......#..#.#",
+      "#.##..#.#.##......#",
+      "#.......#.....#...#",
+      "###################"
+    ] },
+  // Level 2. Trees everywhere, and long open paths.
+  { name: "The Deep Forest", wall: "#8b6b43", floor: "#16261a",
+    archerArea: [1, 1, 17, 13], archerNews: "An archer is hiding behind a tree! Go get him",
+    rows: [
+      "###################",
+      "#.................#",
+      "#.#.##.#.#.##.#.#.#",
+      "#....#......#.....#",
+      "#.##.....#.....##.#",
+      "#....#.#.#...#....#",
+      "#.#.##.......##.#.#",
+      "#.......#.#.......#",
+      "#.#.##.#...#.##.#.#",
+      "#....#...#...#....#",
+      "#.##...#...#...##.#",
+      "#.....#.....#.....#",
+      "#.#.#...#.#...#.#.#",
+      "#.................#",
+      "###################"
+    ] },
+  // Level 3. Walls all around, pillars, and a fountain in the middle.
+  { name: "The Courtyard", wall: "#b8a47a", floor: "#2b2820",
+    archerArea: [6, 4, 12, 10], archerNews: "An archer is hiding by the fountain! Go get him",
+    rows: [
+      "###################",
+      "#.................#",
+      "#.###.###.###.###.#",
+      "#.#.............#.#",
+      "#.#.#.##...##.#.#.#",
+      "#...#.........#...#",
+      "#.#...#.###.#...#.#",
+      "#.#.#...###...#.#.#",
+      "#.#...#.###.#...#.#",
+      "#...#.........#...#",
+      "#.#.#.##...##.#.#.#",
+      "#.#.............#.#",
+      "#.###.###.###.###.#",
+      "#.................#",
+      "###################"
+    ] },
+  // Level 4. Narrow halls and lots of corners.
+  { name: "The Dungeon", wall: "#5d6b82", floor: "#15151d",
+    archerArea: [1, 1, 17, 13], archerNews: "An archer broke out of his cell! Go get him",
+    rows: [
+      "###################",
+      "#........#........#",
+      "#.##.###.#.###.##.#",
+      "#.#.............#.#",
+      "#.#.###.#.#.###.#.#",
+      "#.....#.#.#.#.....#",
+      "#.###.#.....#.###.#",
+      "#.....#.###.#.....#",
+      "#.###.#.....#.###.#",
+      "#.....#.#.#.#.....#",
+      "#.#.###.#.#.###.#.#",
+      "#.#.............#.#",
+      "#.##.###.#.###.##.#",
+      "#........#........#",
+      "###################"
+    ] },
+  // Level 5. A cave full of rocks.
+  { name: "The Dragon's Lair", wall: "#75595a", floor: "#2a1414",
+    archerArea: [1, 1, 17, 13], archerNews: "An archer is hiding behind a rock! Go get him",
+    rows: [
+      "###################",
+      "#........#........#",
+      "#.##...#.#.#...##.#",
+      "#.#..#.......#..#.#",
+      "#...##.......##...#",
+      "#.#...#.....#...#.#",
+      "#.##....#.#....##.#",
+      "#....##.....##....#",
+      "#.##....#.#....##.#",
+      "#.#...#.....#...#.#",
+      "#...##.......##...#",
+      "#.#..#.......#..#.#",
+      "#.##...#.#.#...##.#",
+      "#........#........#",
+      "###################"
+    ] }
 ];
 const COLS = 19, ROWS = 15, TILE = 32;
 const KNIGHT_START = { x: 1, y: 13 };
@@ -190,6 +287,7 @@ const DIR_LIST = Object.values(DIRS);
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 
+let map = MAPS[0];     // the map of the level you are on
 let state = "title";   // title, play, hit, level, won, over
 let stateTimer = 0;
 let hitBy = "";
@@ -207,7 +305,7 @@ let notice = "", noticeTimer = 0;   // a short message at the top of the game
 const TRAIL_KEEP = 12;      // how many squares of the knight's path we remember
 
 function isOpen(x, y) {
-  return y >= 0 && y < ROWS && x >= 0 && x < COLS && MAZE[y][x] !== "#";
+  return y >= 0 && y < ROWS && x >= 0 && x < COLS && map.rows[y][x] !== "#";
 }
 
 // How many walls or trees touch this square (all 8 squares around it)
@@ -236,6 +334,7 @@ function newGame() {
 
 function startLevel(n) {
   level = n;
+  map = MAPS[(n - 1) % MAPS.length];
   coins = new Set();
   for (let y = 0; y < ROWS; y++) {
     for (let x = 0; x < COLS; x++) {
@@ -245,9 +344,9 @@ function startLevel(n) {
   totalCoins = coins.size;
   waitingArcher = null;
   archerCame = false;
-  noticeTimer = 0;
   resetPositions();
   state = "play";
+  say("Level " + n + ": " + map.name);
 }
 
 function makeArcher() {
@@ -326,39 +425,61 @@ window.addEventListener("keyup", function (e) {
   releaseArrow(e.key);
   if (e.key === "s" || e.key === "S") shieldKey = false;
 });
-window.addEventListener("blur", function () { held = []; shieldKey = false; });
+window.addEventListener("blur", function () { held = []; shieldKey = false; if (stickFinger !== null) stickLetGo(); });
 
-// ---------- PHONE BUTTONS ----------
+// ---------- PHONE AND TABLET: THE STICK AND THE BUTTONS ----------
 const TOUCH = window.matchMedia("(pointer: coarse)").matches;
-const dpad = document.getElementById("dpad");
+const stick = document.getElementById("stick");
+const knob = document.getElementById("knob");
 const swordBtn = document.getElementById("swordBtn");
 const shieldBtn = document.getElementById("shieldBtn");
-const PAD_KEYS = { ArrowUp: "dUp", ArrowDown: "dDown", ArrowLeft: "dLeft", ArrowRight: "dRight" };
-let padKey = null;   // the arrow your thumb is on right now
+const STICK_MARKS = { ArrowUp: "dUp", ArrowDown: "dDown", ArrowLeft: "dLeft", ArrowRight: "dRight" };
+let stickKey = null;      // the way the stick is pushed right now
+let stickFinger = null;   // which finger is on the stick
 
-// The arrow pad works out which way your thumb is from its middle,
-// so you can slide your thumb from one arrow to another without lifting it.
-function padTouch(e) {
+// Put a finger on the stick and drag. The blue knob follows your finger.
+// The knight goes the way the knob is pushed the most: up, down, left, or right.
+// You can keep dragging even if your finger slides off the stick.
+function stickTouch(e) {
   e.preventDefault();
-  const box = dpad.getBoundingClientRect();
-  const x = e.clientX - (box.left + box.width / 2), y = e.clientY - (box.top + box.height / 2);
+  const box = stick.getBoundingClientRect();
+  const half = box.width / 2;
+  let x = e.clientX - (box.left + half), y = e.clientY - (box.top + half);
+  const far = Math.hypot(x, y), edge = half * 0.6;   // the knob stops before the edge of the stick
+  if (far > edge) { x *= edge / far; y *= edge / far; }
+  knob.style.transform = "translate(" + x + "px," + y + "px)";
   let key = null;
-  if (Math.hypot(x, y) > box.width * 0.12) {
-    if (Math.abs(x) > Math.abs(y)) key = x > 0 ? "ArrowRight" : "ArrowLeft";
+  if (far > half * STICK_DEAD) {
+    // Near a corner, keep going the way you were going, so the knight doesn't wiggle.
+    let lean = 1;
+    if (stickKey === "ArrowLeft" || stickKey === "ArrowRight") lean = STICK_STAY;
+    if (stickKey === "ArrowUp" || stickKey === "ArrowDown") lean = 1 / STICK_STAY;
+    if (Math.abs(x) * lean > Math.abs(y)) key = x > 0 ? "ArrowRight" : "ArrowLeft";
     else key = y > 0 ? "ArrowDown" : "ArrowUp";
   }
-  setPadKey(key);
+  setStickKey(key);
 }
-function setPadKey(key) {
-  if (key === padKey) return;
-  if (padKey) { releaseArrow(padKey); document.getElementById(PAD_KEYS[padKey]).classList.remove("on"); }
-  padKey = key;
-  if (key) { pressArrow(key); document.getElementById(PAD_KEYS[key]).classList.add("on"); }
+function setStickKey(key) {
+  if (key === stickKey) return;
+  if (stickKey) { releaseArrow(stickKey); document.getElementById(STICK_MARKS[stickKey]).classList.remove("on"); }
+  stickKey = key;
+  if (key) { pressArrow(key); document.getElementById(STICK_MARKS[key]).classList.add("on"); }
 }
-dpad.addEventListener("pointerdown", function (e) { dpad.setPointerCapture(e.pointerId); padTouch(e); });
-dpad.addEventListener("pointermove", function (e) { if (e.buttons || e.pointerType === "touch") padTouch(e); });
+// When you lift your finger, the knob springs back to the middle and the knight stops.
+function stickLetGo() {
+  stickFinger = null;
+  knob.style.transform = "";
+  setStickKey(null);
+}
+stick.addEventListener("pointerdown", function (e) {
+  if (stickFinger !== null) return;
+  stickFinger = e.pointerId;
+  stick.setPointerCapture(e.pointerId);
+  stickTouch(e);
+});
+stick.addEventListener("pointermove", function (e) { if (e.pointerId === stickFinger) stickTouch(e); });
 ["pointerup", "pointercancel", "lostpointercapture"].forEach(function (name) {
-  dpad.addEventListener(name, function () { setPadKey(null); });
+  stick.addEventListener(name, function (e) { if (e.pointerId === stickFinger) stickLetGo(); });
 });
 
 swordBtn.addEventListener("pointerdown", function (e) {
@@ -666,13 +787,15 @@ function attackHitsKnight(m) {
 // THE ARCHERS (the knight's train)
 // =====================================================
 
-// When most of the coins are collected, an archer steps out next to a tree in the forest.
+// When most of the coins are collected, an archer steps out next to a wall, a tree, or a rock.
+// Each map has its own archerArea, the box where he can show up.
 function archerComes() {
   if (archerCame || coins.size > totalCoins * (1 - ARCHER_COINS)) return;
   archerCame = true;
   const spots = [];
-  for (let y = 1; y < ROWS - 1; y++) {
-    for (let x = FOREST_STARTS_AT; x < COLS - 1; x++) {
+  const [left, top, right, bottom] = map.archerArea;
+  for (let y = top; y <= bottom; y++) {
+    for (let x = left; x <= right; x++) {
       if (!isOpen(x, y) || onKnight(x, y)) continue;
       const byTree = DIR_LIST.some(function (d) {
         const tx = x + d.dx, ty = y + d.dy;
@@ -686,7 +809,7 @@ function archerComes() {
   const pick = far.length ? far : spots;
   if (!pick.length) return;
   waitingArcher = pick[Math.floor(Math.random() * pick.length)];
-  say("An archer is hiding in the forest! Go get him");
+  say(map.archerNews);
 }
 
 // The archer joins the back of the train when the knight stands next to him.
@@ -1000,6 +1123,14 @@ function banner(big, small) {
   ctx.fillText(small, canvas.width / 2, 275);
 }
 
+// A smaller line under the banner words.
+function underBanner(text) {
+  ctx.fillStyle = "#d1d5db";
+  ctx.textAlign = "center";
+  ctx.font = "16px Courier New";
+  ctx.fillText(text, canvas.width / 2, 300);
+}
+
 function stunColor(m) {
   return Math.floor(m.stun * 6) % 2 ? "#7c6f8a" : "#a99bb8";
 }
@@ -1101,12 +1232,13 @@ function drawArcher(px, py) {
 }
 
 function draw() {
-  ctx.fillStyle = "#222";
+  // every place has its own floor color and wall color
+  ctx.fillStyle = map.floor;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   for (let y = 0; y < ROWS; y++) {
     for (let x = 0; x < COLS; x++) {
-      if (MAZE[y][x] === "#") {
-        ctx.fillStyle = "#888";
+      if (map.rows[y][x] === "#") {
+        ctx.fillStyle = map.wall;
         ctx.fillRect(x * TILE + 1, y * TILE + 1, TILE - 2, TILE - 2);
       }
     }
@@ -1189,12 +1321,13 @@ function draw() {
   const go = TOUCH ? "Tap here" : "ENTER";
   if (state === "title") {
     banner("THE KNIGHT MAN", TOUCH ? "Tap here to start" : "Press ENTER to start");
-    ctx.fillStyle = "#d1d5db";
-    ctx.font = "16px Courier New";
-    ctx.fillText("version " + VERSION, canvas.width / 2, 300);
+    underBanner("version " + VERSION);
   }
   if (state === "hit") banner("OUCH!", hitBy);
-  if (state === "level") banner("LEVEL " + (level + 1), LEVELS[level].news);
+  if (state === "level") {
+    banner("LEVEL " + (level + 1), MAPS[level % MAPS.length].name);
+    underBanner(LEVELS[level].news);
+  }
   if (state === "won") banner("YOU WIN!", "All " + MAX_LEVEL + " levels! Score " + score + ". " + go + " to play again");
   if (state === "over") banner("GAME OVER", "Level " + level + ", score " + score + ". " + go + " to try again");
 

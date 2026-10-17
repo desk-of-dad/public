@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>The Knight Man (v9)</title>
+<title>The Knight Man (v10)</title>
 <style>
   body { margin: 0; background: #111; color: #eee; font-family: "Courier New", monospace;
          display: flex; flex-direction: column; align-items: center; }
@@ -83,15 +83,16 @@
 </div>
 <div id="help">
   <span class="keyHelp">ARROW KEYS: move &nbsp;|&nbsp; SPACE: swing sword &nbsp;|&nbsp; hold S: shield &nbsp;|&nbsp; ENTER: start<br>
-  The shield only covers the side you face. Fire and clubs stop at it. Hold S and tap an arrow to turn it.<br>
+  The shield only covers the side you face. Fire and clubs stop at it. It never runs out.<br>
+  With the shield up you can walk and swing your sword. The shield stays pointed the same way. To turn it, let go of S, turn, and hold S again.<br>
   Collect most of the coins and an archer shows up. Stand next to him and he joins you. Every level is a new place.<br>
   A story screen shows before every level. Press ENTER or SPACE to skip it.<br>
   Win or lose, you can put your name on the TOP KNIGHTS list. Press L on the title screen to see it.</span>
-  <span class="touchHelp">Tap the game to start. Drag the stick to move. Hold SHIELD and push the stick to turn your shield. Collect most of the coins and an archer shows up. Every level is a new place. Tap the story screen to skip it. Win or lose, you can put your name on the TOP KNIGHTS list.</span>
+  <span class="touchHelp">Tap the game to start. Drag the stick to move. Hold SHIELD to block. It never runs out. With the shield up you can walk and swing your sword, and the shield stays pointed the same way. To turn it, let go of SHIELD, turn, and hold it again. Collect most of the coins and an archer shows up. Every level is a new place. Tap the story screen to skip it. Win or lose, you can put your name on the TOP KNIGHTS list.</span>
 </div>
 
 <script>
-const VERSION = 9;                // shows on the title screen, so you know which game loaded
+const VERSION = 10;               // shows on the title screen, so you know which game loaded
 
 // =====================================================
 // NUMBERS YOU CAN CHANGE (this is called "tuning")
@@ -105,7 +106,7 @@ const SWORD_SWING_TIME = 0.3;     // seconds the sword stays out
 const SWORD_REST_TIME = 0.8;      // seconds before you can swing again
 const SWORD_STUN_TIME = 3;        // seconds a monster is stunned by the sword
 const SWORD_PUSH = 1;             // squares the sword pushes a monster back
-const SHIELD_SECONDS = 2;         // how long a full shield lasts
+const SHIELD_SECONDS = 0;         // how long a full shield lasts. 0 means it never runs out
 const SHIELD_REFILL_SECONDS = 5;  // how long an empty shield takes to fill up
 
 // Dragon (walks on the ground, only sees the way its eyes point, sees far)
@@ -490,7 +491,8 @@ function resetPositions() {
 // The keyboard and the phone buttons both use these.
 function pressArrow(key) {
   if (!held.includes(key)) held.push(key);
-  if (state === "play") knight.facing = DIRS[key];
+  // with the shield up, the knight keeps facing the same way, so the shield stays put
+  if (state === "play" && !isShielding()) knight.facing = DIRS[key];
   if (state === "name") { nameArrow(key); nameRepeat = 0.4; }
 }
 function releaseArrow(key) {
@@ -501,7 +503,7 @@ function swingSword() {
   if (state === "movie") { skipMovie(); return; }
   if (state === "name") { nameDone(); return; }
   if (state === "board") { leaveBoard(); return; }
-  if (state === "play" && swordRest <= 0 && !isShielding()) {
+  if (state === "play" && swordRest <= 0) {
     swingTimer = SWORD_SWING_TIME;
     swordRest = SWORD_REST_TIME;
   }
@@ -652,7 +654,7 @@ function moveThing(thing, speed, dt, chooseNext, onArrive) {
       if (!d) break;
       thing.moving = d;
       thing.last = d;
-      thing.facing = d;
+      if (thing !== knight) thing.facing = d;   // knightNext turns the knight, unless his shield is up
     }
     const goalX = thing.tx + thing.moving.dx, goalY = thing.ty + thing.moving.dy;
     const left = Math.abs(goalX - thing.px) + Math.abs(goalY - thing.py);
@@ -672,16 +674,27 @@ function moveThing(thing, speed, dt, chooseNext, onArrive) {
 }
 
 // The knight goes the way of the newest arrow key. He stops when you let go.
+// With the shield up he can still walk, but he keeps facing the same way,
+// so he can back away from a monster with the shield pointed at it.
 function knightNext() {
-  if (isShielding()) return null;
+  const shielding = isShielding();
   for (let i = held.length - 1; i >= 0; i--) {
     const d = DIRS[held[i]];
-    if (isOpen(knight.tx + d.dx, knight.ty + d.dy)) {
-      knight.facing = d;
-      return d;
-    }
+    if (!isOpen(knight.tx + d.dx, knight.ty + d.dy)) continue;
+    if (shielding && shieldIntoMonster(d)) continue;
+    if (!shielding) knight.facing = d;
+    return d;
   }
   return null;
+}
+
+// The knight can't push his shield into a monster on the ground. He stops in front of it.
+function shieldIntoMonster(d) {
+  if (d.dx !== knight.facing.dx || d.dy !== knight.facing.dy) return false;
+  const nx = knight.tx + d.dx, ny = knight.ty + d.dy;
+  return monsters.some(function (m) {
+    return m.kind !== "flyer" && Math.round(m.px) === nx && Math.round(m.py) === ny;
+  });
 }
 
 function knightArrives() {
@@ -1207,9 +1220,10 @@ function update(dt) {
   if (state !== "play") return;
   playTime += dt;
 
-  // shield power drains while you hold S, and fills back up when you let go
+  // shield power drains while you hold S, and fills back up when you let go.
+  // If SHIELD_SECONDS is 0, it never drains.
   if (isShielding()) {
-    shield -= dt / SHIELD_SECONDS;
+    if (SHIELD_SECONDS > 0) shield -= dt / SHIELD_SECONDS;
     if (shield <= 0) { shield = 0; shieldBroken = true; }
   } else {
     shield = Math.min(1, shield + dt / SHIELD_REFILL_SECONDS);

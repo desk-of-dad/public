@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>The Knight Man (v11)</title>
+<title>The Knight Man (v12)</title>
 <style>
   body { margin: 0; background: #111; color: #eee; font-family: "Courier New", monospace;
          display: flex; flex-direction: column; align-items: center; }
@@ -42,11 +42,12 @@
     #dLeft { left: 0; top: 57px; } #dRight { right: 0; top: 57px; }
     #knob { position: absolute; left: 42px; top: 42px; width: 60px; height: 60px; border-radius: 50%;
             background: #3b82f6; border: 3px solid #eee; box-sizing: border-box; pointer-events: none; }
-    #actions { grid-area: actions; display: flex; gap: 14px; touch-action: none; }
-    #actions div { width: 76px; height: 76px; border-radius: 50%; border: 3px solid #eee;
+    #actions { grid-area: actions; display: flex; gap: 8px; touch-action: none; }
+    #actions div { width: 64px; height: 64px; border-radius: 50%; border: 3px solid #eee;
                    display: flex; align-items: center; justify-content: center;
                    font: bold 13px "Courier New", monospace; color: #111; touch-action: none; }
     #swordBtn { background: #e5e7eb; }
+    #spearBtn { background: #d6b88a; line-height: 1.2; text-align: center; }
     #shieldBtn { background: #22d3ee; }
     #actions div.on { filter: brightness(0.6); }
     .keyHelp { display: none; }
@@ -68,7 +69,7 @@
 <div id="hud">
   <span>SCORE: <span id="score">0</span></span>
   <span>LEVEL: <span id="level">1</span></span>
-  <span>COINS: <span id="coinsGot">0</span></span>
+  <span>COINS: <span id="purse">0</span></span>
   <span>LEFT: <span id="coinsLeft">0</span></span>
   <span>SHIELD: <span id="shieldBox"><div id="shieldBar"></div></span></span>
   <span>LIVES: <span id="lives">3</span></span>
@@ -82,6 +83,7 @@
   </div>
   <div id="actions">
     <div id="swordBtn">SWORD</div>
+    <div id="spearBtn">SPEAR</div>
     <div id="shieldBtn">SHIELD</div>
   </div>
 </div>
@@ -91,12 +93,13 @@
   With the shield up you can walk and swing your sword. The shield stays pointed the same way. To turn it, let go of S, turn, and hold S again.<br>
   Collect most of the coins and an archer shows up. Stand next to him and he joins you. Every level is a new place.<br>
   A story screen shows before every level. Press ENTER or SPACE to skip it.<br>
+  After each level you visit THE MARKET. Spend your coins on a horse, an extra life, a catapult, or spears. D: throw a spear.<br>
   Win or lose, you can put your name on the TOP KNIGHTS list. Press L on the title screen to see it.</span>
-  <span class="touchHelp">Tap the game to start. Drag the stick to move. Hold SHIELD to block. It never runs out. With the shield up you can walk and swing your sword, and the shield stays pointed the same way. To turn it, let go of SHIELD, turn, and hold it again. Collect most of the coins and an archer shows up. Every level is a new place. Tap the story screen to skip it. Win or lose, you can put your name on the TOP KNIGHTS list.</span>
+  <span class="touchHelp">Tap the game to start. Drag the stick to move. Hold SHIELD to block. It never runs out. With the shield up you can walk and swing your sword, and the shield stays pointed the same way. To turn it, let go of SHIELD, turn, and hold it again. Collect most of the coins and an archer shows up. Every level is a new place. Tap the story screen to skip it. After each level you visit THE MARKET to spend your coins. Tap SPEAR to throw a spear. Win or lose, you can put your name on the TOP KNIGHTS list.</span>
 </div>
 
 <script>
-const VERSION = 11;               // shows on the title screen, so you know which game loaded
+const VERSION = 12;               // shows on the title screen, so you know which game loaded
 
 // =====================================================
 // NUMBERS YOU CAN CHANGE (this is called "tuning")
@@ -152,6 +155,25 @@ const ARROW_SPEED = 16;           // squares per second
 const ARCHER_SHIELD_SECONDS = 2;  // how long an archer's shield lasts
 const ARCHER_SHIELD_REFILL_SECONDS = 5;  // how long an empty archer shield takes to fill up
 const NOTICE_TIME = 3;            // seconds a message stays at the top of the game
+
+// THE MARKET (the shop between levels). Prices are in coins.
+const HORSE_PRICE = 100;          // the horse: the knight walks faster for the rest of the game
+const HORSE_SPEED = 1.5;          // how much faster the horse is. 1.5 means one and a half times as fast
+const LIFE_PRICE = 130;           // one extra life
+const CATAPULT_PRICE = 200;       // the catapult: it rolls behind the train and throws rocks
+const CATAPULT_SPEED = 4;         // squares per second. It is slow, so it falls behind
+const CATAPULT_RANGE = 8;         // how many squares away it can throw. Rocks fly over walls and trees
+const CATAPULT_REST = 5;          // seconds between rocks
+const CATAPULT_STUN_TIME = 6;     // seconds a monster is stunned by a rock
+const CATAPULT_SPLASH = 1.5;      // a rock also stuns monsters this many squares from where it lands
+const CATAPULT_HITS = 2;          // how many hits it can take. After that it burns to ashes
+const CATAPULT_SAFE_TIME = 1.5;   // after a hit, seconds before it can be hit again
+const ROCK_SPEED = 7;             // squares per second
+const SPEAR_PRICE = 10;           // one spear. You can only throw it once
+const SPEAR_RANGE = 4;            // how many squares a spear flies. It flies over walls and trees
+const SPEAR_SPEED = 12;           // squares per second
+const SPEAR_STUN_TIME = 4;        // seconds a monster is stunned by a spear
+const SPEAR_REST = 0.4;           // seconds before you can throw the next spear
 
 // The stick (phone and tablet)
 const STICK_DEAD = 0.2;           // how far you push the stick before the knight moves (0.2 is 20% of the way out)
@@ -358,7 +380,18 @@ let trail = [];        // the squares the knight just walked on, newest first. T
 let waitingArcher = null;   // an archer hiding in the forest, waiting for the knight to come get him
 let archerCame = false;     // has this level's archer shown up yet?
 let totalCoins = 0;         // how many coins the level started with
-let coinsGot = 0;           // coins picked up in this whole game, all levels added up
+let purse = 0;              // coins you have right now. Coins go in when you pick them up and out when you buy
+let hasHorse = false;       // did you buy the horse?
+let spears = 0;             // spears you are carrying
+let spearRest = 0;          // seconds before you can throw the next spear
+let flyingSpears = [];      // spears flying right now
+let catapult = null;        // your catapult, if you bought one
+let rocks = [];             // rocks flying right now
+let booms = [];             // where a rock just landed, for the dust cloud
+let ashes = null;           // what is left of a burned catapult, for a few seconds
+let shopPick = 0;           // which row of the market is picked
+let shopWords = "";         // what the market says after you try to buy
+let shopWordsGood = true;   // green words (you bought it) or red words (you can't)
 let arrows = [];            // arrows flying right now
 let notice = "", noticeTimer = 0;   // a short message at the top of the game
 const TRAIL_KEEP = 12;      // how many squares of the knight's path we remember
@@ -400,7 +433,10 @@ function newGame(withMovie) {
   score = 0;
   lives = START_LIVES;
   playTime = 0;
-  coinsGot = 0;
+  purse = 0;
+  hasHorse = false;
+  spears = 0;
+  catapult = null;
   archers = [];
   lostArchers = 0;
   myEntry = null;
@@ -489,6 +525,20 @@ function resetPositions() {
   trail = [];
   for (let i = 0; i < TRAIL_KEEP; i++) trail.push({ x: knight.tx, y: knight.ty });
   arrows = [];
+  rocks = [];
+  booms = [];
+  flyingSpears = [];
+  spearRest = 0;
+  ashes = null;
+  // the catapult starts behind the knight and follows the squares he walks on
+  if (catapult) {
+    catapult.px = catapult.tx = KNIGHT_START.x;
+    catapult.py = catapult.ty = KNIGHT_START.y;
+    catapult.path = [];
+    catapult.goal = null;
+    catapult.hurt = 0;
+    catapult.rest = 2;
+  }
   archers.forEach(function (a) { a.rest = 1; a.shield = 1; a.shieldBroken = false; a.shieldUp = false; });
   placeArchers();
 }
@@ -497,6 +547,7 @@ function resetPositions() {
 // The keyboard and the phone buttons both use these.
 function pressArrow(key) {
   if (!held.includes(key)) held.push(key);
+  if (state === "shop") { shopMove(key); return; }
   // with the shield up, the knight keeps facing the same way, so the shield stays put
   if (state === "play" && !isShielding()) knight.facing = DIRS[key];
   if (state === "name") { nameArrow(key); nameRepeat = 0.4; }
@@ -509,6 +560,7 @@ function swingSword() {
   if (state === "movie") { skipMovie(); return; }
   if (state === "name") { nameDone(); return; }
   if (state === "board") { leaveBoard(); return; }
+  if (state === "shop") { shopChoose(); return; }
   if (state === "play" && swordRest <= 0) {
     swingTimer = SWORD_SWING_TIME;
     swordRest = SWORD_REST_TIME;
@@ -521,6 +573,16 @@ function pressStart() {
   else if (state === "movie") skipMovie();
   else if (state === "name") nameDone();
   else if (state === "board") leaveBoard();
+  else if (state === "shop") shopChoose();
+}
+
+// Throw a spear the way the knight is facing. It flies over walls and trees.
+function throwSpear() {
+  if (state !== "play" || spearRest > 0) return;
+  if (spears <= 0) { say("No spears! Buy them at the market."); return; }
+  spears--;
+  spearRest = SPEAR_REST;
+  flyingSpears.push({ x: knight.px, y: knight.py, dx: knight.facing.dx, dy: knight.facing.dy, gone: 0 });
 }
 
 window.addEventListener("keydown", function (e) {
@@ -539,6 +601,8 @@ window.addEventListener("keydown", function (e) {
     swingSword();
   } else if (e.key === "s" || e.key === "S") {
     shieldKey = true;
+  } else if (e.key === "d" || e.key === "D") {
+    throwSpear();
   } else if (e.key === "Enter") {
     pressStart();
   } else if ((e.key === "l" || e.key === "L") && state === "title") {
@@ -557,6 +621,7 @@ const stick = document.getElementById("stick");
 const knob = document.getElementById("knob");
 const swordBtn = document.getElementById("swordBtn");
 const shieldBtn = document.getElementById("shieldBtn");
+const spearBtn = document.getElementById("spearBtn");
 const STICK_MARKS = { ArrowUp: "dUp", ArrowDown: "dDown", ArrowLeft: "dLeft", ArrowRight: "dRight" };
 let stickKey = null;      // the way the stick is pushed right now
 let stickFinger = null;   // which finger is on the stick
@@ -617,7 +682,13 @@ shieldBtn.addEventListener("pointerdown", function (e) {
   shieldBtn.classList.add("on");
   shieldKey = true;
 });
+spearBtn.addEventListener("pointerdown", function (e) {
+  e.preventDefault();
+  spearBtn.classList.add("on");
+  throwSpear();
+});
 ["pointerup", "pointercancel", "lostpointercapture"].forEach(function (name) {
+  spearBtn.addEventListener(name, function () { spearBtn.classList.remove("on"); });
   swordBtn.addEventListener(name, function () { swordBtn.classList.remove("on"); });
   shieldBtn.addEventListener(name, function () { shieldBtn.classList.remove("on"); shieldKey = false; });
 });
@@ -630,6 +701,7 @@ canvas.addEventListener("pointerdown", function (e) {
   const y = (e.clientY - box.top) / box.height * canvas.height - TOP;
   if (state === "title" && inBox(x, y, BOARD_BUTTON)) showBoard("title");
   else if (state === "name") nameTap(x, y);
+  else if (state === "shop") shopTap(x, y);
   else pressStart();
 });
 // stop the long-press menu from popping up on the buttons
@@ -705,11 +777,12 @@ function shieldIntoMonster(d) {
 
 function knightArrives() {
   trail.unshift({ x: knight.tx, y: knight.ty });
+  if (catapult) catapult.path.push({ x: knight.tx, y: knight.ty });
   trail.length = TRAIL_KEEP;
   const key = knight.tx + "," + knight.ty;
   if (coins.has(key)) {
     coins.delete(key);
-    coinsGot++;
+    purse++;
     score += COIN_POINTS;
     if (coins.size === 0) {
       if (level >= MAX_LEVEL) {
@@ -1221,9 +1294,10 @@ function update(dt) {
   }
   if (state === "level") {
     stateTimer -= dt;
-    if (stateTimer <= 0) startLevel(level + 1);
+    if (stateTimer <= 0) openShop();
     return;
   }
+  if (state === "shop") return;
   if (state !== "play") return;
   playTime += dt;
 
@@ -1241,7 +1315,8 @@ function update(dt) {
 
   noticeTimer = Math.max(0, noticeTimer - dt);
 
-  moveThing(knight, KNIGHT_SPEED, dt, knightNext, knightArrives);
+  spearRest = Math.max(0, spearRest - dt);
+  moveThing(knight, KNIGHT_SPEED * (hasHorse ? HORSE_SPEED : 1), dt, knightNext, knightArrives);
   if (state !== "play") return;
 
   // the train follows the knight, and archers raise their shields if there is danger behind them
@@ -1305,6 +1380,185 @@ function update(dt) {
   loseHitArchers();
   archersShoot(dt);
   moveArrows(dt);
+  moveSpears(dt);
+  moveCatapult(dt);
+  catapultGetsHit(dt);
+  catapultShoots(dt);
+  moveRocks(dt);
+  booms = booms.filter(function (b) { b.t -= dt; return b.t > 0; });
+  if (ashes) { ashes.t -= dt; if (ashes.t <= 0) ashes = null; }
+}
+
+// ---------- STUNNING ----------
+// A stunned monster freezes and stops lifting its club or breathing fire.
+function stunMonster(m, time) {
+  m.stun = Math.max(m.stun, time);
+  m.windup = 0;
+  m.lean = 0;
+  m.attackTimer = 0;
+  m.attackSquares = [];
+}
+
+// ---------- SPEARS ----------
+// A spear flies straight, over walls and trees, and stuns the first monster it touches.
+function moveSpears(dt) {
+  flyingSpears = flyingSpears.filter(function (sp) {
+    const go = Math.min(SPEAR_SPEED * dt, SPEAR_RANGE - sp.gone);
+    sp.x += sp.dx * go; sp.y += sp.dy * go; sp.gone += go;
+    const hit = monsters.find(function (m) { return Math.hypot(m.px - sp.x, m.py - sp.y) < 0.7; });
+    if (hit) { stunMonster(hit, SPEAR_STUN_TIME); return false; }
+    return sp.gone < SPEAR_RANGE;
+  });
+}
+
+// ---------- THE CATAPULT ----------
+function makeCatapult() {
+  return { px: KNIGHT_START.x, py: KNIGHT_START.y, tx: KNIGHT_START.x, ty: KNIGHT_START.y,
+           path: [], goal: null, hp: CATAPULT_HITS, hurt: 0, rest: 2, lookLeft: false };
+}
+
+// The catapult rolls along the squares the knight walked on, at the back of the train.
+// It is slow, so when the knight walks fast it falls behind. It waits behind the last archer.
+function moveCatapult(dt) {
+  if (!catapult) return;
+  const c = catapult;
+  let dist = CATAPULT_SPEED * dt;
+  while (dist > 0) {
+    if (!c.goal) {
+      if (c.path.length <= archers.length + 1) break;
+      c.goal = c.path.shift();
+      if (c.goal.x === c.tx && c.goal.y === c.ty) { c.goal = null; continue; }
+      if (c.goal.x !== c.tx) c.lookLeft = c.goal.x < c.tx;
+    }
+    const left = Math.abs(c.goal.x - c.px) + Math.abs(c.goal.y - c.py);
+    if (dist >= left) {
+      c.px = c.tx = c.goal.x;
+      c.py = c.ty = c.goal.y;
+      c.goal = null;
+      dist -= left;
+    } else {
+      c.px += Math.sign(c.goal.x - c.px) * dist;
+      c.py += Math.sign(c.goal.y - c.py) * dist;
+      dist = 0;
+    }
+  }
+}
+
+// Did a monster, fire, or a club get the catapult? It can take 2 hits. Then it burns to ashes.
+function catapultGetsHit(dt) {
+  if (!catapult) return;
+  const c = catapult;
+  c.hurt = Math.max(0, c.hurt - dt);
+  if (c.hurt > 0) return;
+  const cx = Math.round(c.px), cy = Math.round(c.py);
+  const hit = monsters.some(function (m) {
+    if (m.stun > 0) return false;
+    if (m.attackTimer > 0 && attackSquaresNow(m).some(function (s) { return s.x === cx && s.y === cy; })) return true;
+    if (m.kind === "flyer") return Math.hypot(m.px - c.px, m.py - c.py) < 0.7;
+    return Math.abs(m.px - c.px) + Math.abs(m.py - c.py) < 0.7;
+  });
+  if (!hit) return;
+  c.hp--;
+  c.hurt = CATAPULT_SAFE_TIME;
+  if (c.hp <= 0) {
+    ashes = { x: c.px, y: c.py, t: 4 };
+    catapult = null;
+    rocks = [];
+    say("Your catapult burned to ashes!");
+  } else {
+    say("Your catapult got hit! One more hit and it burns.");
+  }
+}
+
+// The catapult throws a rock at the closest monster it can reach, over walls and trees.
+function catapultShoots(dt) {
+  if (!catapult) return;
+  const c = catapult;
+  c.rest = Math.max(0, c.rest - dt);
+  if (c.rest > 0) return;
+  let target = null, best = CATAPULT_RANGE;
+  monsters.forEach(function (m) {
+    if (m.stun > 0 || rocks.some(function (r) { return r.target === m; })) return;
+    const far = Math.hypot(m.px - c.px, m.py - c.py);
+    if (far <= best) { target = m; best = far; }
+  });
+  if (!target) return;
+  rocks.push({ fromX: c.px, fromY: c.py, x: c.px, y: c.py, t: 0, time: Math.max(0.5, best / ROCK_SPEED), target: target });
+  c.rest = CATAPULT_REST;
+}
+
+// Rocks fly up in a curve and come down on the monster. Every monster near the landing spot is stunned.
+function moveRocks(dt) {
+  rocks = rocks.filter(function (r) {
+    r.t += dt;
+    const f = Math.min(1, r.t / r.time);
+    r.x = r.fromX + (r.target.px - r.fromX) * f;
+    r.y = r.fromY + (r.target.py - r.fromY) * f;
+    if (f < 1) return true;
+    monsters.forEach(function (m) {
+      if (Math.hypot(m.px - r.x, m.py - r.y) <= CATAPULT_SPLASH) stunMonster(m, CATAPULT_STUN_TIME);
+    });
+    booms.push({ x: r.x, y: r.y, t: 0.4 });
+    return false;
+  });
+}
+
+// ---------- THE MARKET ----------
+const SHOP = [
+  { id: "horse", name: "HORSE", price: HORSE_PRICE, about: "The knight walks faster. For the whole game." },
+  { id: "life", name: "EXTRA LIFE", price: LIFE_PRICE, about: "One more life." },
+  { id: "catapult", name: "CATAPULT", price: CATAPULT_PRICE, about: "Throws rocks over walls. Takes 2 hits." },
+  { id: "spear", name: "SPEAR", price: SPEAR_PRICE, about: "Throw it 4 squares, over walls. Once." }
+];
+const SHOP_ROW = { x: 34, y: 66, w: 540, h: 60, gap: 8 };
+const NEXT_BUTTON = { x: 184, y: 344, w: 240, h: 44 };
+function shopBox(i) {
+  return { x: SHOP_ROW.x, y: SHOP_ROW.y + i * (SHOP_ROW.h + SHOP_ROW.gap), w: SHOP_ROW.w, h: SHOP_ROW.h };
+}
+
+function openShop() {
+  goTo("shop");
+  shopPick = 0;
+  shopWords = "";
+}
+function leaveShop() {
+  startLevel(level + 1);
+}
+// Can't buy it because you already have it? Then it says why.
+function soldOut(item) {
+  if (item.id === "horse" && hasHorse) return "You already have the horse.";
+  if (item.id === "catapult" && catapult) return "You already have a catapult.";
+  return "";
+}
+function shopBuy(i) {
+  const item = SHOP[i];
+  const why = soldOut(item);
+  shopWordsGood = false;
+  if (why) { shopWords = why; return; }
+  if (purse < item.price) { shopWords = "You need " + (item.price - purse) + " more coins for that."; return; }
+  purse -= item.price;
+  shopWordsGood = true;
+  if (item.id === "horse") { hasHorse = true; shopWords = "You got the horse! Giddy up!"; }
+  if (item.id === "life") { lives++; shopWords = "You got an extra life! Now you have " + livesWords(lives) + "."; }
+  if (item.id === "catapult") { catapult = makeCatapult(); shopWords = "You got a catapult! It rolls behind your train."; }
+  if (item.id === "spear") { spears++; shopWords = "You got a spear! Now you have " + spears + "."; }
+}
+// UP and DOWN move the pick. The last row is the NEXT LEVEL button.
+function shopMove(key) {
+  if (key === "ArrowUp") shopPick = Math.max(0, shopPick - 1);
+  if (key === "ArrowDown") shopPick = Math.min(SHOP.length, shopPick + 1);
+}
+function shopChoose() {
+  if (screenTimer < SCREEN_WAIT) return;
+  if (shopPick === SHOP.length) leaveShop();
+  else shopBuy(shopPick);
+}
+function shopTap(x, y) {
+  if (screenTimer < SCREEN_WAIT) return;
+  for (let i = 0; i < SHOP.length; i++) {
+    if (inBox(x, y, shopBox(i))) { shopPick = i; shopBuy(i); return; }
+  }
+  if (inBox(x, y, NEXT_BUTTON)) leaveShop();
 }
 
 // =====================================================
@@ -1506,6 +1760,65 @@ const ART = {
       "...BBB..BBB....." ] }
 };
 
+// The pictures for THE MARKET: the horse, the catapult, and a heart for an extra life.
+const SHOP_ART = {
+  horse: { colors: { H: "#92400e", M: "#1c1917", D: "#111", L: "#451a03" },
+    side: [
+      "................",
+      "...........HH...",
+      "..........HHHH..",
+      ".........MHHDHH.",
+      ".........MHHHHHH",
+      "........MMHHH.HH",
+      "........MHHH....",
+      "..HHHHHHHHHH....",
+      ".MHHHHHHHHHH....",
+      "MMHHHHHHHHHH....",
+      "M.HHHHHHHHHH....",
+      "..HHH....HHH....",
+      "..H.H....H.H....",
+      "..H.H....H.H....",
+      "..L.L....L.L....",
+      "................" ] },
+  catapult: { colors: { W: "#b45309", D: "#422006", G: "#9ca3af", K: "#1f2937" },
+    burnt: { W: "#57534e", D: "#1c1917", G: "#6b7280", K: "#111" },
+    side: [
+      "................",
+      "............GG..",
+      "...........GGGG.",
+      "...........GGGG.",
+      "..........DWWD..",
+      ".........WW.....",
+      "........WW......",
+      ".......WW.......",
+      "......WW........",
+      ".....WW.........",
+      "....WWD.........",
+      "..WWWWWWWWWWWW..",
+      "..W..W....W..W..",
+      ".KKK.......KKK..",
+      "KK.KK.....KK.KK.",
+      ".KKK.......KKK.." ] },
+  heart: { colors: { R: "#ef4444", W: "#fecaca" },
+    side: [
+      "................",
+      "..RRR.....RRR...",
+      ".RRRRR...RRRRR..",
+      "RRWRRRR.RRRRRRR.",
+      "RWRRRRRRRRRRRRR.",
+      "RRRRRRRRRRRRRRR.",
+      "RRRRRRRRRRRRRRR.",
+      ".RRRRRRRRRRRRR..",
+      "..RRRRRRRRRRR...",
+      "...RRRRRRRRR....",
+      "....RRRRRRR.....",
+      ".....RRRRR......",
+      "......RRR.......",
+      ".......R........",
+      "................",
+      "................" ] }
+};
+
 // The game paints a picture as short bars, one row at a time. A bar is: column, row, how long, letter.
 function makeBars(rows) {
   const bars = [];
@@ -1547,6 +1860,9 @@ const DRAGON_PICS = fourWays(ART.dragon);
 const DRAGON_FLY_PICS = leftAndRight(ART.dragon.fly);
 const OGRE_PICS = leftAndRight(ART.ogre.down);
 const ARCHER_PICS = leftAndRight(ART.archer.down);
+const HORSE_PICS = leftAndRight(SHOP_ART.horse.side);
+const CATAPULT_PICS = leftAndRight(SHOP_ART.catapult.side);
+const HEART_PIC = makeBars(SHOP_ART.heart.side);
 const FLYER_PICS = { up: makeBars(ART.flyer.up),
                      right: makeBars(turnRows(ART.flyer.up)),
                      down: makeBars(turnRows(turnRows(ART.flyer.up))),
@@ -1686,6 +2002,106 @@ function stoppedBy(holder) {
 // The knight: the Silver Knight. He has a picture for each way he can face.
 function drawKnight(px, py, facing) {
   drawPic(KNIGHT_PICS[wayName(facing)], ART.knight.colors, px * TILE, py * TILE, 2);
+}
+
+// The knight on his horse. The horse faces left or right, and so does the knight on its back.
+function drawRider() {
+  if (knight.facing.dx !== 0) knight.lookLeft = knight.facing.dx < 0;
+  drawPic(knight.lookLeft ? HORSE_PICS.left : HORSE_PICS.right, SHOP_ART.horse.colors, knight.px * TILE, knight.py * TILE + 4, 2);
+  // he sits toward the back, so you can see the horse's head
+  const back = knight.lookLeft ? 6 : -6;
+  drawPic(knight.lookLeft ? KNIGHT_PICS.left : KNIGHT_PICS.right, ART.knight.colors, knight.px * TILE + back, knight.py * TILE - 10, 2);
+}
+
+// The catapult. After one hit it turns black and smokes. Right after a hit it blinks.
+function drawCatapult(c) {
+  if (c.hurt > 0 && Math.floor(c.hurt * 8) % 2) return;
+  const colors = c.hp < CATAPULT_HITS ? SHOP_ART.catapult.burnt : SHOP_ART.catapult.colors;
+  drawPic(c.lookLeft ? CATAPULT_PICS.left : CATAPULT_PICS.right, colors, c.px * TILE, c.py * TILE, 2);
+  if (c.hp < CATAPULT_HITS) {
+    const puff = (Date.now() / 600) % 1;
+    ctx.fillStyle = "rgba(156,163,175," + (0.7 - puff * 0.6) + ")";
+    ctx.fillRect(c.px * TILE + 12, c.py * TILE + 8 - puff * 14, 8, 8);
+  }
+}
+
+// A spear: a brown stick with a grey point. dx and dy are the way it points.
+function drawSpear(cx, cy, dx, dy, len) {
+  ctx.strokeStyle = "#a16207";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(cx - dx * len / 2, cy - dy * len / 2);
+  ctx.lineTo(cx + dx * len / 2, cy + dy * len / 2);
+  ctx.stroke();
+  const tx = cx + dx * len / 2, ty = cy + dy * len / 2;
+  ctx.fillStyle = "#e5e7eb";
+  ctx.beginPath();
+  ctx.moveTo(tx + dx * 7, ty + dy * 7);
+  ctx.lineTo(tx - dy * 4, ty + dx * 4);
+  ctx.lineTo(tx + dy * 4, ty - dx * 4);
+  ctx.fill();
+}
+
+// ---------- THE MARKET SCREEN ----------
+function drawShop() {
+  const mid = canvas.width / 2;
+  darkScreen("#f5b921");
+  ctx.fillStyle = "#f5b921";
+  ctx.font = "bold 30px Courier New";
+  ctx.fillText("THE MARKET", mid, 18);
+  ctx.fillStyle = "#fff";
+  ctx.font = "bold 18px Courier New";
+  ctx.fillText("You have " + purse + " coins", mid, 48);
+
+  SHOP.forEach(function (item, i) {
+    const b = shopBox(i), on = i === shopPick, why = soldOut(item);
+    const canBuy = !why && purse >= item.price;
+    block(b.x, b.y, b.w, b.h, on ? "#1e3a8a" : "#1f2937");
+    ctx.strokeStyle = on ? "#fde047" : "#4b5563";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(b.x, b.y, b.w, b.h);
+    // the picture
+    const px = b.x + 12, py = b.y + 14;
+    if (item.id === "horse") drawPic(HORSE_PICS.right, SHOP_ART.horse.colors, px, py, 2);
+    if (item.id === "life") drawPic(HEART_PIC, SHOP_ART.heart.colors, px, py, 2);
+    if (item.id === "catapult") drawPic(CATAPULT_PICS.right, SHOP_ART.catapult.colors, px, py, 2);
+    if (item.id === "spear") drawSpear(px + 14, py + 18, 0.7, -0.7, 28);
+    // the name and what it does
+    ctx.textAlign = "left";
+    ctx.fillStyle = canBuy ? "#fff" : "#9ca3af";
+    ctx.font = "bold 19px Courier New";
+    ctx.fillText(item.name, b.x + 58, b.y + 25);
+    ctx.fillStyle = "#d1d5db";
+    ctx.font = "13px Courier New";
+    let about = item.about;
+    if (item.id === "spear" && spears > 0) about += " You have " + spears + ".";
+    ctx.fillText(about, b.x + 58, b.y + 46);
+    // the price
+    ctx.textAlign = "right";
+    ctx.fillStyle = why ? "#4ade80" : (canBuy ? "#f5b921" : "#6b7280");
+    ctx.font = "bold 18px Courier New";
+    ctx.fillText(why ? "YOU HAVE IT" : item.price + " coins", b.x + b.w - 12, b.y + 25);
+  });
+
+  const n = NEXT_BUTTON, onNext = shopPick === SHOP.length;
+  block(n.x, n.y, n.w, n.h, onNext ? "#fde047" : "#a16207");
+  ctx.strokeStyle = onNext ? "#fff" : "#4b5563";
+  ctx.lineWidth = 3;
+  ctx.strokeRect(n.x, n.y, n.w, n.h);
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#111";
+  ctx.font = "bold 22px Courier New";
+  ctx.fillText("NEXT LEVEL", mid, n.y + 30);
+
+  if (shopWords) {
+    ctx.fillStyle = shopWordsGood ? "#4ade80" : "#f87171";
+    ctx.font = "bold 16px Courier New";
+    ctx.fillText(shopWords, mid, 418);
+  }
+  ctx.fillStyle = "#9ca3af";
+  ctx.font = "14px Courier New";
+  ctx.fillText(TOUCH ? "Tap a thing to buy it. Tap NEXT LEVEL when you are done."
+                     : "UP and DOWN to pick. ENTER to buy. Then pick NEXT LEVEL.", mid, 452);
 }
 
 // An archer: the Forest Archer. lookLeft flips him, so he faces the way he walks.
@@ -2324,7 +2740,9 @@ function drawHud() {
   document.getElementById("score").textContent = fresh ? 0 : score;
   document.getElementById("level").textContent = fresh ? 1 : level;
   document.getElementById("lives").textContent = fresh ? START_LIVES : lives;
-  document.getElementById("coinsGot").textContent = fresh ? 0 : coinsGot;
+  document.getElementById("purse").textContent = fresh ? 0 : purse;
+  const spearWords = "SPEAR<br>" + (fresh ? 0 : spears);
+  if (spearBtn.innerHTML !== spearWords) spearBtn.innerHTML = spearWords;
   document.getElementById("coinsLeft").textContent = fresh ? "-" : coins.size;
   const bar = document.getElementById("shieldBar");
   bar.style.width = (fresh ? 100 : Math.round(shield * 100)) + "%";
@@ -2335,7 +2753,7 @@ function draw() {
   // The map is drawn one square down, so the message strip sits above the top wall.
   ctx.setTransform(1, 0, 0, 1, 0, TOP);
   // the screens that cover the whole game
-  const screens = { story: drawStory, movie: drawMovie, name: drawName, board: drawBoard };
+  const screens = { story: drawStory, movie: drawMovie, name: drawName, board: drawBoard, shop: drawShop };
   if (screens[state]) {
     screens[state]();
     drawHud();
@@ -2357,6 +2775,14 @@ function draw() {
     ctx.textAlign = "right";
     ctx.font = "15px Courier New";
     ctx.fillText(clock(playTime), canvas.width - 8, -TOP + 22);
+    // how many spears you are carrying
+    if (spears > 0) {
+      drawSpear(18, -TOP + 16, 0.7, -0.7, 16);
+      ctx.fillStyle = "#e5e7eb";
+      ctx.textAlign = "left";
+      ctx.font = "bold 15px Courier New";
+      ctx.fillText("x" + spears, 30, -TOP + 22);
+    }
   }
 
   // every place has its own floor color and wall color
@@ -2375,6 +2801,13 @@ function draw() {
       const p = key.split(",");
       square(+p[0], +p[1], 8, "#f5b921");
     });
+
+    // what is left of a burned catapult
+    if (ashes) {
+      square(ashes.x, ashes.y, 22, "#44403c");
+      square(ashes.x, ashes.y, 12, Math.floor(Date.now() / 200) % 2 ? "#f97316" : "#78716c");
+    }
+    if (catapult) drawCatapult(catapult);
 
     monsters.forEach(function (m) {
       if (m.kind === "dragon") drawDragon(m);
@@ -2416,8 +2849,14 @@ function draw() {
       ctx.stroke();
     });
 
-    // the knight
-    drawKnight(knight.px, knight.py, knight.facing);
+    // flying spears
+    flyingSpears.forEach(function (sp) {
+      drawSpear((sp.x + 0.5) * TILE, (sp.y + 0.5) * TILE, sp.dx, sp.dy, 22);
+    });
+
+    // the knight, on his horse if you bought it
+    if (hasHorse) drawRider();
+    else drawKnight(knight.px, knight.py, knight.facing);
     if (swingTimer > 0) {
       for (let i = 1; i <= SWORD_REACH; i++) {
         const sx = knight.px + knight.facing.dx * i, sy = knight.py + knight.facing.dy * i;
@@ -2432,6 +2871,21 @@ function draw() {
 
     // flying dragons go on top of everything, because they are up in the air
     monsters.forEach(function (m) { if (m.kind === "flyer") drawFlyer(m); });
+
+    // catapult rocks fly high in a curve. The dark spot on the ground is the rock's shadow.
+    rocks.forEach(function (r) {
+      const f = Math.min(1, r.t / r.time), up = Math.sin(f * Math.PI) * TILE * 2;
+      const cx = (r.x + 0.5) * TILE, cy = (r.y + 0.5) * TILE;
+      ctx.fillStyle = "rgba(0,0,0,0.35)";
+      ctx.beginPath(); ctx.arc(cx, cy, 5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#9ca3af";
+      ctx.beginPath(); ctx.arc(cx, cy - up, 7, 0, Math.PI * 2); ctx.fill();
+    });
+    // dust where a rock landed
+    booms.forEach(function (b) {
+      ctx.fillStyle = "rgba(214,211,209," + b.t * 2 + ")";
+      ctx.beginPath(); ctx.arc((b.x + 0.5) * TILE, (b.y + 0.5) * TILE, CATAPULT_SPLASH * TILE * (1 - b.t), 0, Math.PI * 2); ctx.fill();
+    });
 
   }
 
